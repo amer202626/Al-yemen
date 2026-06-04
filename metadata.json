@@ -1,0 +1,6 @@
+{
+  "name": "دليل اليمن",
+  "description": "دليل خدمات يربط المستخدمين بمقدمي الخدمات (أصحاب المهن)، مع نظام إدارة كامل للمشرفين، ومزامنة فورية.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
