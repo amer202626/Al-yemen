@@ -71,6 +71,14 @@ data class ChatMessage(
     val isRead: Boolean = false
 )
 
+@Entity(tableName = "moderators")
+data class Moderator(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val username: String,
+    val passwordHex: String,
+    val permissions: String = "ALL" // "ALL", "READ_ONLY"
+)
+
 @Entity(tableName = "app_settings")
 data class AppSettings(
     @PrimaryKey val id: Int = 1,
@@ -78,6 +86,8 @@ data class AppSettings(
     val themeChoice: String = "COSMIC_SILVER", // "COSMIC_SILVER", "LUXURY_GOLD", "ELEGANT_EMERALD", "CUSTOM"
     val customPrimaryColor: String = "#80939C",
     val customBackgroundColor: String = "#121A1E",
+    val customSecondaryColor: String = "#0288D1",
+    val customFontFamily: String = "DEFAULT", // "DEFAULT", "MONOSPACE", "SERIF", "SANS_SERIF"
     val adFooterText: String = "MAW 777644670",
     val isFooterHidden: Boolean = false,
     val welcomeMessage: String = "مرحباً بكم في دليل اليمن لربط المهنيين والأسر المنتجة!",
@@ -106,7 +116,26 @@ data class AppSettings(
     
     // Top app bar icons config (comma separated list of tags in order: e.g. "HOME,LOGIN,REGISTER,LANG,REFRESH")
     val topAppBarConfigItems: String = "HOME,LOGIN,REGISTER,LANG,REFRESH",
-    val activeLanguage: String = "AR" // "AR" / "EN"
+    val activeLanguage: String = "AR", // "AR" / "EN"
+
+    // Real-time chat & footer customization
+    val chatIconSize: Float = 56f,
+    val chatIconColor: String = "#00C853",
+    val isChatIconHidden: Boolean = false,
+    val isChatIconDeleted: Boolean = false,
+    val footerTransparency: Float = 1.0f,
+    val footerFontSize: Float = 11f,
+    val footerHeightScale: Float = 1.0f,
+
+    // Blocklist, welcome screen controls, suspension & subscriptions
+    val blockedProviderIds: String = "",
+    val blockedUserIdentifiers: String = "",
+    val isAllProvidersSuspended: Boolean = false,
+    val welcomeMessageFontSize: Float = 14f,
+    val welcomeMessageGravity: String = "CENTER", // "CENTER", "START", "END"
+    val welcomeImageBase64: String = "",
+    val isWelcomeImageEnabled: Boolean = false,
+    val isSubscriptionFeatureEnabled: Boolean = true
 )
 
 // --- DAOS ---
@@ -207,6 +236,21 @@ interface AppSettingsDao {
     suspend fun insertSettings(settings: AppSettings)
 }
 
+@Dao
+interface ModeratorDao {
+    @Query("SELECT * FROM moderators ORDER BY id DESC")
+    fun getAllModeratorsFlow(): Flow<List<Moderator>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertModerator(moderator: Moderator)
+
+    @Update
+    suspend fun updateModerator(moderator: Moderator)
+
+    @Delete
+    suspend fun deleteModerator(moderator: Moderator)
+}
+
 // --- DATABASE HOLDER ---
 
 @Database(
@@ -216,9 +260,10 @@ interface AppSettingsDao {
         Banner::class,
         Complaint::class,
         ChatMessage::class,
-        AppSettings::class
+        AppSettings::class,
+        Moderator::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -228,4 +273,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun complaintDao(): ComplaintDao
     abstract fun chatMessageDao(): ChatMessageDao
     abstract fun appSettingsDao(): AppSettingsDao
+    abstract fun moderatorDao(): ModeratorDao
 }

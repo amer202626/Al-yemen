@@ -24,6 +24,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val complaints = repository.complaints.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val chatMessages = repository.chatMessages.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val appSettings = repository.settings.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    val moderators = repository.moderators.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     // --- Search & Filtering States ---
     private val _searchQuery = MutableStateFlow("")
@@ -88,14 +89,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Filtered providers based on active search queries
+    // Filtered providers based on active search queries and admin restrictions
     val filteredProviders: StateFlow<List<ServiceProvider>> = combine(
         activeProviders,
         _searchQuery,
         _filterRegion,
         _filterCategoryId,
         _filterRating,
-        _searchRadiusKm
+        _searchRadiusKm,
+        appSettings
     ) { flowItems ->
         val list = flowItems[0] as List<ServiceProvider>
         val query = flowItems[1] as String
@@ -103,8 +105,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val catId = flowItems[3] as Int?
         val rating = flowItems[4] as Int
         val radius = flowItems[5] as Float
-
+        val settingsVal = flowItems[6] as AppSettings?
+        
         var temp = list
+
+        // Apply admin blocklist filters
+        if (settingsVal != null && settingsVal.blockedProviderIds.isNotBlank()) {
+            val blockedIds = settingsVal.blockedProviderIds.split(",").mapNotNull { it.trim().toIntOrNull() }
+            if (blockedIds.isNotEmpty()) {
+                temp = temp.filter { it.id !in blockedIds }
+            }
+        }
+
+        // Apply global suspension
+        if (settingsVal != null && settingsVal.isAllProvidersSuspended) {
+            temp = emptyList()
+        }
 
         if (query.isNotBlank()) {
             temp = temp.filter {
@@ -160,18 +176,39 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun login(user: String, pass: String): Boolean {
         val currentSettings = appSettings.value ?: AppSettings()
-        val matchAdmin = user.uppercase() == "WAM2026" && pass == currentSettings.supportPhone // wait, password specified is 'maher736462' by default. Let's support both
-        val passAdmin = pass == "maher736462" || pass == currentSettings.supportPhone || pass == "777644670"
+        val matchDefault = user.uppercase() == "WAM2026" && (pass == "maher736462" || pass == currentSettings.supportPhone || pass == "777644670")
+        val dbMod = moderators.value.find { it.username.equals(user, ignoreCase = true) && it.passwordHex == pass }
 
-        if (user.uppercase() == "WAM2026" && passAdmin) {
+        if (matchDefault || dbMod != null) {
             isLoggedIn = true
-            loggedInUser = "ADMIN"
+            loggedInUser = user.uppercase()
             currentScreen = "ADMIN_DASHBOARD"
             saveLoginStateIfNeeded()
-            triggerAdminNotification("🔓 تم تسجيل الدخول للمدير الرئيسي WAM2026 نجاح!")
+            triggerAdminNotification("🔓 تم تسجيل الدخول للمشرف $user بنجاح!")
             return true
         }
         return false
+    }
+
+    fun addModerator(username: String, passwordHex: String, permissions: String = "ALL") {
+        viewModelScope.launch {
+            repository.addModerator(Moderator(username = username, passwordHex = passwordHex, permissions = permissions))
+            triggerAdminNotification("🛡️ تم إضافة المشرف الجديد: $username")
+        }
+    }
+
+    fun updateModerator(moderator: Moderator) {
+        viewModelScope.launch {
+            repository.updateModerator(moderator)
+            triggerAdminNotification("✏️ تم تعديل حساب المشرف: ${moderator.username}")
+        }
+    }
+
+    fun deleteModerator(moderator: Moderator) {
+        viewModelScope.launch {
+            repository.deleteModerator(moderator)
+            triggerAdminNotification("🗑️ تم إزالة المشرف: ${moderator.username}")
+        }
     }
 
     fun loginBackdoor(pass: String): Boolean {
@@ -283,10 +320,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Category Manager
-    fun addCategory(nameAr: String, nameEn: String, icon: String = "📁") {
+    fun addCategory(nameAr: String, nameEn: String, icon: String = "📁", parentId: Int? = null) {
         viewModelScope.launch {
-            repository.addCategory(Category(nameAr = nameAr, nameEn = nameEn, imageBase64 = icon))
+            repository.addCategory(Category(nameAr = nameAr, nameEn = nameEn, imageBase64 = icon, parentId = parentId))
             triggerAdminNotification("📂 تم إضافة قسم جديد: $nameAr")
+        }
+    }
+
+    fun updateCategory(id: Int, nameAr: String, nameEn: String, icon: String = "📁", parentId: Int? = null) {
+        viewModelScope.launch {
+            repository.updateCategory(Category(id = id, nameAr = nameAr, nameEn = nameEn, imageBase64 = icon, parentId = parentId))
+            triggerAdminNotification("✏️ تم تعديل القسم: $nameAr")
         }
     }
 

@@ -232,15 +232,18 @@ fun MainAppContent(viewModel: AppViewModel) {
             },
             bottomBar = {
                 // --- CUSTOM INTEGRATED FOOTER AND ASSISTANTS ---
+                val trans = settings.footerTransparency
+                val fontS = settings.footerFontSize.sp
+                val padV = (10 * settings.footerHeightScale).dp
                 Surface(
-                    color = MaterialTheme.colorScheme.surface,
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = trans),
                     tonalElevation = 4.dp,
                     modifier = Modifier
                         .fillMaxWidth()
                         .navigationBarsPadding()
                 ) {
                     Column(
-                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 16.dp),
+                        modifier = Modifier.padding(vertical = padV, horizontal = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Row(
@@ -260,7 +263,7 @@ fun MainAppContent(viewModel: AppViewModel) {
                             if (!settings.isFooterHidden) {
                                 Text(
                                     text = settings.adFooterText,
-                                    fontSize = 11.sp, // Reduced by 50% compared to standard base body
+                                    fontSize = fontS,
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Bold,
                                     textAlign = TextAlign.Center,
@@ -279,7 +282,7 @@ fun MainAppContent(viewModel: AppViewModel) {
                         
                         Text(
                             text = "صنع بكل فخر يمني 🇾🇪 - WAM 2026",
-                            fontSize = 8.sp,
+                            fontSize = (0.7f * settings.footerFontSize).sp,
                             color = Color.Gray,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth()
@@ -389,6 +392,24 @@ fun MainAppContent(viewModel: AppViewModel) {
                     }
                 }
 
+                // FLOATING CIRCULAR POPUP ICON FOR CHAT (Direct interaction)
+                if (!settings.isChatIconDeleted && !settings.isChatIconHidden) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(start = 16.dp, bottom = 1.dp)
+                            .size(settings.chatIconSize.dp)
+                            .clip(CircleShape)
+                            .background(parseHexColor(settings.chatIconColor, Color(0xFF00C853)))
+                            .clickable {
+                                viewModel.currentScreen = "CHAT_ROOM"
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("💬", fontSize = (settings.chatIconSize * 0.45f).sp, color = Color.White)
+                    }
+                }
+
                 // Invisible Overlay floating popups or panels
             }
         }
@@ -444,38 +465,163 @@ fun MainAppContent(viewModel: AppViewModel) {
 
         // --- SMART ASSISTANT INTERACTIVE FAQ MODAL DIALOG ---
         if (showAssistantOverlayDialog) {
+            var assistantInputText by remember { mutableStateOf("") }
+            var assistantChatHistory by remember {
+                mutableStateOf(
+                    listOf(
+                        "ASSISTANT" to "مرحباً بك! أنا مساعد دليل اليمن السريع 🤖. كيف يمكنني مساعدتك اليوم؟"
+                    )
+                )
+            }
+
             AlertDialog(
                 onDismissRequest = { showAssistantOverlayDialog = false },
-                title = { Text("🤖 المساعد الذكي التفاعلي لدليل اليمن") },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("🤖", fontSize = 24.sp)
+                        Text("المساعد التفاعلي الذكي", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                },
                 text = {
                     Column(
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.verticalScroll(rememberScrollState())
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 350.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text(
-                            text = "مرحباً بكم! أنا مساعدكم التفاعلي، أعمل بدون الحاجة لإنترنت لتمكينكم من استعراض الدليل بكل أريحية. إليكم بعض النصائح السريعة:",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        
-                        Divider(color = GrayBorder)
+                        // Chat messages stream
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                .padding(8.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                for (msg in assistantChatHistory) {
+                                    val isMe = msg.first == "USER"
+                                    Box(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        contentAlignment = if (isMe) Alignment.CenterEnd else Alignment.CenterStart
+                                    ) {
+                                        Surface(
+                                            color = if (isMe) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer,
+                                            shape = RoundedCornerShape(
+                                                topStart = 12.dp,
+                                                topEnd = 12.dp,
+                                                bottomStart = if (isMe) 12.dp else 0.dp,
+                                                bottomEnd = if (isMe) 0.dp else 12.dp
+                                            ),
+                                            tonalElevation = 1.dp
+                                        ) {
+                                            Text(
+                                                text = msg.second,
+                                                fontSize = 12.sp,
+                                                color = if (isMe) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer,
+                                                modifier = Modifier.padding(10.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
 
-                        Text("📁 كيفية البحث الفعال:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        Text("يمكنك استخدام شريط الفلاتر للفرز بالحي السكني، أو الفئات، أو المسافة التقريبية لضمان مهنيين الأقرب لك.", fontSize = 11.sp)
+                        // Quick action chips
+                        Text("💡 أسئلة شائعة اقترحها لك:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            val suggestQuestions = listOf(
+                                "ماهي الأقسام",
+                                "كيف أتصل بمقدم خدمة",
+                                "ما هو رقم الدعم"
+                            )
+                            for (q in suggestQuestions) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.primaryContainer)
+                                        .clickable {
+                                            val query = q
+                                            val reply = when {
+                                                query.contains("أقسام") || query.contains("اقسام") -> {
+                                                    "الأقسام والمهن المتاحة بالدليل حالياً هي: \n" + categoriesList.joinToString("\n") { "• ${it.imageBase64} ${it.nameAr}" }
+                                                }
+                                                query.contains("أتصل") || query.contains("اتصل") -> {
+                                                    "للاتصال بأي مهني:\n1. اختر القسم المناسب.\n2. انقر على ملف المهني.\n3. اضغط زر الاتصال الأخضر للتواصل مباشرة عبر الهاتف أو الواتساب."
+                                                }
+                                                query.contains("الدعم") || query.contains("دعم") -> {
+                                                    "رقم الدعم الفني الرسمي لدليل اليمن هو: ${settings.supportPhone} \n(MAW 777644670) - راسلنا لحل أي مشكلة فوراً."
+                                                }
+                                                else -> "أهلاً بك! دليل اليمن يرحب باستفسارك المتميز."
+                                            }
+                                            assistantChatHistory = assistantChatHistory + (query to reply)
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Text(q, fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
 
-                        Text("👤 تقديم طلب كمهني:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        Text("انقر على أيقونة 👤 وقم برفع صورتك الشخصية وصورة بطاقة هويتك، وسيقوم المشرفون بتفعيل حسابك فورا بشارة زرقاء ✔️.", fontSize = 11.sp)
+                        // Input control
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = assistantInputText,
+                                onValueChange = { assistantInputText = it },
+                                placeholder = { Text("اكتب استفسارك هنا...") },
+                                modifier = Modifier.weight(1f),
+                                textStyle = LocalTextStyle.current.copy(color = MaterialTheme.colorScheme.onSurface),
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedBorderColor = Color.Gray,
+                                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                                )
+                            )
 
-                        Text("🔑 الإعدادات والمصادقة السرية:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        Text("الدخول للمشرفين من أيقونة 🔐 للتعديل. أما المالك فمن خلال البوابة الخلفية الحصرية المحمية تماماً.", fontSize = 11.sp)
-                        
-                        Text("📞 التواصل والدعم المباشر:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        Text("رقم الدعم الفني المعتمد للتواصل والمشاركة هو: ${settings.supportPhone}.", fontSize = 11.sp)
+                            IconButton(
+                                onClick = {
+                                    if (assistantInputText.isNotBlank()) {
+                                        val query = assistantInputText.trim()
+                                        val reply = when {
+                                            query.contains("أقسام") || query.contains("اقسام") -> {
+                                                "الأقسام والمهن المتاحة بالدليل حالياً هي: \n" + categoriesList.joinToString("\n") { "• ${it.imageBase64} ${it.nameAr}" }
+                                            }
+                                            query.contains("أتصل") || query.contains("اتصل") || query.contains("تواصل") -> {
+                                                "للاتصال بأي مهني:\n1. اختر القسم المناسب.\n2. انقر على ملف المهني.\n3. اضغط زر الاتصال الأخضر للتواصل مباشرة عبر الهاتف أو الواتساب."
+                                            }
+                                            query.contains("الدعم") || query.contains("دعم") || query.contains("رقم") -> {
+                                                "رقم الدعم الفني الرسمي لدليل اليمن هو: ${settings.supportPhone} \n(MAW 777644670) - راسلنا لحل أي مشكلة فوراً."
+                                            }
+                                            else -> "تعديل الإدارة: مرحباً بك! تساؤلك قيد التحليل والدعم. يمكنك الاتصال بخط المساعدة الرسمي ${settings.supportPhone} للحصول على دعم مخصص وسريع!"
+                                        }
+                                        assistantChatHistory = assistantChatHistory + (query to reply)
+                                        assistantInputText = ""
+                                    }
+                                },
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary)
+                            ) {
+                                Text("✉️", color = Color.White)
+                            }
+                        }
                     }
                 },
                 confirmButton = {
-                    Button(onClick = { showAssistantOverlayDialog = false }) {
-                        Text("فهمت، شكراً لك !")
+                    TextButton(onClick = { showAssistantOverlayDialog = false }) {
+                        Text("إغلاق", fontWeight = FontWeight.Bold)
                     }
                 }
             )

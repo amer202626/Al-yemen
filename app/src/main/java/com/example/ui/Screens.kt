@@ -36,6 +36,10 @@ import com.example.ui.theme.*
 import androidx.compose.foundation.lazy.rememberLazyListState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.activity.compose.rememberLauncherForActivityResult
 
 // --- 1. HOME SCREEN ---
 @Composable
@@ -403,7 +407,7 @@ fun HomeScreen(
                                             .background(MaterialTheme.colorScheme.primaryContainer),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Text(p.profileImageBase64, fontSize = 20.sp)
+                                        ProviderImage(p.profileImageBase64, modifier = Modifier.fillMaxSize(), textStyle = LocalTextStyle.current.copy(fontSize = 18.sp))
                                     }
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(p.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
@@ -480,7 +484,7 @@ fun HomeScreen(
                                 .background(MaterialTheme.colorScheme.primaryContainer),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(p.profileImageBase64, fontSize = 28.sp)
+                            ProviderImage(p.profileImageBase64, modifier = Modifier.fillMaxSize(), textStyle = LocalTextStyle.current.copy(fontSize = 24.sp))
                         }
 
                         Column(modifier = Modifier.weight(1f)) {
@@ -533,6 +537,40 @@ fun HomeScreen(
     }
 }
 
+@Composable
+fun ProviderImage(imgStr: String, modifier: Modifier = Modifier, textStyle: androidx.compose.ui.text.TextStyle = LocalTextStyle.current) {
+    val bitmap = remember(imgStr) {
+        if (imgStr.length > 50) { // Base64 data usually is quite long
+            try {
+                val cleanStr = if (imgStr.contains("base64,")) imgStr.substringAfter("base64,") else imgStr
+                val decodedBytes = android.util.Base64.decode(cleanStr, android.util.Base64.DEFAULT)
+                android.graphics.BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
+            } catch (e: Exception) {
+                null
+            }
+        } else {
+            null
+        }
+    }
+
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = "Profile Image",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Text(
+                text = if (imgStr.isBlank()) "👨‍💼" else imgStr,
+                style = textStyle,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
 // --- 2. REGISTRATION FORM (👤) ---
 @Composable
 fun RegisterScreen(viewModel: AppViewModel, settings: AppSettings, categoriesList: List<Category>) {
@@ -540,7 +578,8 @@ fun RegisterScreen(viewModel: AppViewModel, settings: AppSettings, categoriesLis
     var phone by remember { mutableStateOf("") }
     var address by remember { mutableStateOf("") }
     var neighborhood by remember { mutableStateOf("") }
-    var selectedCatId by remember { mutableStateOf<Int?>(categoriesList.firstOrNull()?.id) }
+    var selectedCatId by remember { mutableStateOf<Int?>(categoriesList.firstOrNull { it.parentId == null }?.id) }
+    var selectedSubCatId by remember { mutableStateOf<Int?>(null) }
     var locationGps by remember { mutableStateOf("") }
     
     // Captured images representation as simulation strings
@@ -551,6 +590,47 @@ fun RegisterScreen(viewModel: AppViewModel, settings: AppSettings, categoriesLis
     var activeImageField by remember { mutableStateOf("PROFILE") } // "PROFILE" or "IDCARD"
     
     val context = LocalContext.current
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        if (bitmap != null) {
+            val outputStream = java.io.ByteArrayOutputStream()
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, outputStream)
+            val byteArray = outputStream.toByteArray()
+            val base64 = android.util.Base64.encodeToString(byteArray, android.util.Base64.NO_WRAP)
+            if (activeImageField == "PROFILE") {
+                profileImage = base64
+            } else {
+                idCardImage = base64
+            }
+        }
+    }
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+                inputStream?.close()
+                if (bitmap != null) {
+                    val outputStream = java.io.ByteArrayOutputStream()
+                    bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, outputStream)
+                    val byteArray = outputStream.toByteArray()
+                    val base64 = android.util.Base64.encodeToString(byteArray, android.util.Base64.NO_WRAP)
+                    if (activeImageField == "PROFILE") {
+                        profileImage = base64
+                    } else {
+                        idCardImage = base64
+                    }
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "فشل تحميل الصورة من المعرض", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     if (settings.isMaintenanceMode) {
         Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
@@ -622,29 +702,78 @@ fun RegisterScreen(viewModel: AppViewModel, settings: AppSettings, categoriesLis
                     singleLine = true
                 )
 
-                // Category selection dropdown (FIXED: freely selectable categories)
-                Text("تحديد قسم الخدمة والمهنة الرئيسي (إجباري):", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.horizontalScroll(rememberScrollState())
-                        ) {
-                            for (cat in categoriesList) {
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(if (selectedCatId == cat.id) MaterialTheme.colorScheme.primary else Color.DarkGray)
-                                        .clickable { selectedCatId = cat.id }
-                                        .padding(horizontal = 14.dp, vertical = 10.dp)
-                                ) {
-                                    Text(
-                                        text = "${cat.imageBase64}  ${cat.nameAr}",
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp
-                                    )
+                // Main Category
+                var mainCategoryExpanded by remember { mutableStateOf(false) }
+                val mainCategory = categoriesList.find { it.id == selectedCatId }
+                
+                Text("القسم المهني الرئيسي (إجباري):", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable { mainCategoryExpanded = true }
+                        .padding(16.dp)
+                ) {
+                    Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                        Text(mainCategory?.let { "${it.imageBase64} ${it.nameAr}" } ?: "اختر القسم المهني الرئيسي...", fontWeight = FontWeight.Bold)
+                        Text("▼")
+                    }
+                    DropdownMenu(
+                        expanded = mainCategoryExpanded,
+                        onDismissRequest = { mainCategoryExpanded = false },
+                        modifier = Modifier.fillMaxWidth(0.9f)
+                    ) {
+                        categoriesList.filter { it.parentId == null }.forEach { cat ->
+                            DropdownMenuItem(
+                                text = { Text("${cat.imageBase64}  ${cat.nameAr}", fontWeight = FontWeight.Bold) },
+                                onClick = {
+                                    selectedCatId = cat.id
+                                    selectedSubCatId = null
+                                    mainCategoryExpanded = false
                                 }
+                            )
+                        }
+                    }
+                }
+
+                // Sub Category / Specific service type
+                val subCategories = categoriesList.filter { it.parentId == selectedCatId }
+                var subCategoryExpanded by remember { mutableStateOf(false) }
+                val subCategory = subCategories.find { it.id == selectedSubCatId } ?: subCategories.firstOrNull()
+                
+                Text("نوع الخدمة بالتحديد / قسم فرعي (إجباري):", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable { subCategoryExpanded = true }
+                        .padding(16.dp)
+                ) {
+                    Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                        Text(subCategory?.let { "${it.imageBase64} ${it.nameAr}" } ?: "اختر الخدمة بالتفصيل...", fontWeight = FontWeight.Bold)
+                        Text("▼")
+                    }
+                    DropdownMenu(
+                        expanded = subCategoryExpanded,
+                        onDismissRequest = { subCategoryExpanded = false },
+                        modifier = Modifier.fillMaxWidth(0.9f)
+                    ) {
+                        if (subCategories.isEmpty()) {
+                            DropdownMenuItem(
+                                text = { Text("تأكيد القسم العام التلقائي") },
+                                onClick = { subCategoryExpanded = false }
+                            )
+                        } else {
+                            subCategories.forEach { subCat ->
+                                DropdownMenuItem(
+                                    text = { Text("${subCat.imageBase64}  ${subCat.nameAr}", fontWeight = FontWeight.Bold) },
+                                    onClick = {
+                                        selectedSubCatId = subCat.id
+                                        subCategoryExpanded = false
+                                    }
+                                )
                             }
                         }
                     }
@@ -710,7 +839,7 @@ fun RegisterScreen(viewModel: AppViewModel, settings: AppSettings, categoriesLis
                             .background(MaterialTheme.colorScheme.primaryContainer),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(profileImage, fontSize = 36.sp)
+                        ProviderImage(profileImage, modifier = Modifier.fillMaxSize(), textStyle = LocalTextStyle.current.copy(fontSize = 36.sp))
                     }
                     Button(
                         onClick = {
@@ -719,7 +848,7 @@ fun RegisterScreen(viewModel: AppViewModel, settings: AppSettings, categoriesLis
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
-                        Text("📸 اخذ صورة أو اختيار من البوم الكاميرا")
+                        Text("📸 اخر صورة أو اختيار من البوم الكاميرا")
                     }
                 }
 
@@ -736,7 +865,7 @@ fun RegisterScreen(viewModel: AppViewModel, settings: AppSettings, categoriesLis
                             .background(MaterialTheme.colorScheme.primaryContainer),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(idCardImage, fontSize = 32.sp)
+                        ProviderImage(idCardImage, modifier = Modifier.fillMaxSize(), textStyle = LocalTextStyle.current.copy(fontSize = 32.sp))
                     }
                     Button(
                         onClick = {
@@ -760,7 +889,7 @@ fun RegisterScreen(viewModel: AppViewModel, settings: AppSettings, categoriesLis
                             viewModel.registerPendingProvider(
                                 name = name,
                                 phone = phone,
-                                catId = selectedCatId!!,
+                                catId = selectedSubCatId ?: selectedCatId!!,
                                 address = address,
                                 neighborhood = neighborhood,
                                 profileImgBase64 = profileImage,
@@ -783,11 +912,38 @@ fun RegisterScreen(viewModel: AppViewModel, settings: AppSettings, categoriesLis
     if (showImagePickerDialog) {
         AlertDialog(
             onDismissRequest = { showImagePickerDialog = false },
-            title = { Text(if (activeImageField == "PROFILE") "📸 اختر الصورة الشخصية المقترحة" else "📁 اختر صورة الهوية والمستندات") },
+            title = { Text(if (activeImageField == "PROFILE") "📸 اختر الصورة الشخصية " else "📁 اختر صورة الهوية والمستندات") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("انقر على أي صورة / رمز مقترح وسنقوم بتعبئة الحقل فوراً (محاكاة ذكية متكاملة):", fontSize = 12.sp)
+                    Text("اختر طريقة تحميل الصورة من هاتفك مباشرة للتحقق أو اختر تفعيل رمز تجريبي سريع:", fontSize = 12.sp)
                     
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                cameraLauncher.launch(null)
+                                showImagePickerDialog = false
+                            }
+                        ) {
+                            Text("📷 الكاميرا حياً")
+                        }
+                        Button(
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                galleryLauncher.launch("image/*")
+                                showImagePickerDialog = false
+                            }
+                        ) {
+                            Text("🖼️ الاستوديو")
+                        }
+                    }
+
+                    Divider()
+                    Text("أو انقر على رمز مقترح وسنتعامل معه فوراً:", fontSize = 11.sp, color = Color.Gray)
+
                     val picks = if (activeImageField == "PROFILE") {
                         listOf("👨‍🔧", "🍲", "📱", "🧵", "👩‍🎓", "🚗", "🏠", "💼")
                     } else {
@@ -819,7 +975,7 @@ fun RegisterScreen(viewModel: AppViewModel, settings: AppSettings, categoriesLis
                         }
                     }
                     
-                    Text("أو اختر صورة حقيقية من الويب:", fontSize = 11.sp, color = Color.Gray)
+                    Text("أو ارفق رابط صورة كاربونية مباشرة:", fontSize = 11.sp, color = Color.Gray)
                     OutlinedTextField(
                         value = if (activeImageField == "PROFILE") profileImage else idCardImage,
                         onValueChange = {
@@ -1087,7 +1243,7 @@ fun ProviderDetailScreen(viewModel: AppViewModel, settings: AppSettings, provide
                             .background(MaterialTheme.colorScheme.primaryContainer),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(providerState.profileImageBase64, fontSize = 48.sp)
+                        ProviderImage(providerState.profileImageBase64, modifier = Modifier.fillMaxSize(), textStyle = LocalTextStyle.current.copy(fontSize = 36.sp))
                     }
 
                     Row(
@@ -1325,7 +1481,7 @@ fun PreviousRequestsScreen(viewModel: AppViewModel, settings: AppSettings) {
                                 .background(MaterialTheme.colorScheme.primaryContainer),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(p?.profileImageBase64 ?: "👨‍🔧", fontSize = 24.sp)
+                            ProviderImage(p?.profileImageBase64 ?: "👨‍🔧", modifier = Modifier.fillMaxSize(), textStyle = LocalTextStyle.current.copy(fontSize = 18.sp))
                         }
 
                         Column(modifier = Modifier.weight(1f)) {

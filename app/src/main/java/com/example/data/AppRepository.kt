@@ -12,7 +12,7 @@ class AppRepository(private val context: Context) {
         context.applicationContext,
         AppDatabase::class.java,
         "yemen_directory.db"
-    ).build()
+    ).fallbackToDestructiveMigration().build()
 
     // Expose flows from DAOs
     val categories: Flow<List<Category>> = db.categoryDao().getAllCategoriesFlow()
@@ -23,6 +23,7 @@ class AppRepository(private val context: Context) {
     val complaints: Flow<List<Complaint>> = db.complaintDao().getAllComplaintsFlow()
     val chatMessages: Flow<List<ChatMessage>> = db.chatMessageDao().getAllMessagesFlow()
     val settings: Flow<AppSettings?> = db.appSettingsDao().getSettingsFlow()
+    val moderators: Flow<List<Moderator>> = db.moderatorDao().getAllModeratorsFlow()
 
     // Seeding default values
     suspend fun initializeDatabaseIfNeeded() {
@@ -30,6 +31,7 @@ class AppRepository(private val context: Context) {
         if (currentSettings == null) {
             // No settings. Create initial settings
             db.appSettingsDao().insertSettings(AppSettings())
+            db.moderatorDao().insertModerator(Moderator(username = "WAM2026", passwordHex = "maher736462", permissions = "ALL"))
             
             // Seed Categories
             val defaultCats = listOf(
@@ -113,6 +115,11 @@ class AppRepository(private val context: Context) {
             db.bannerDao().insertBanner(banner2)
         }
     }
+
+    // --- Moderator Management ---
+    suspend fun addModerator(mod: Moderator) = db.moderatorDao().insertModerator(mod)
+    suspend fun updateModerator(mod: Moderator) = db.moderatorDao().updateModerator(mod)
+    suspend fun deleteModerator(mod: Moderator) = db.moderatorDao().deleteModerator(mod)
 
     // --- Category Management ---
     suspend fun addCategory(cat: Category) = db.categoryDao().insertCategory(cat)
