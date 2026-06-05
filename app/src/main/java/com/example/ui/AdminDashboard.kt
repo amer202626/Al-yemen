@@ -135,17 +135,22 @@ fun AdminDashboardScreen(
         }
 
         // --- DASHBOARD NAVIGATION CHIPS ---
-        val tabs = listOf(
-            Triple("STATS", "عام 📊", "الاحصائيات والادارة العامة"),
-            Triple("PENDING", "مراجعة ⏳", "طلبات الإعتماد"),
-            Triple("PROVIDERS", "المهنيين 🛠️", "إحصاء خدمات الدليل"),
-            Triple("CATEGORIES", "الأقسام 📂", "إدارة التخصصات والخدمات"),
-            Triple("BANNERS", "اللافتات إعلانات 📢", "إعلانات الشريط"),
-            Triple("COMPLAINTS", "البلاغات ⚠️", "شكاوى المستخدمين ضد المهنيين"),
-            Triple("MODERATORS", "المشرفين 🛡️", "المشرفين والصلاحيات الحية"),
-            Triple("THEMES", "أيقونات ومظهر 🎨", "ألوان وحجم الأيقونات والدردشة"),
-            Triple("BACKUPS", "خصوصية وبيانات 🧼", "مسح سجلات، تصدير، احتياطي")
-        )
+        val tabs = remember(viewModel.loggedInUser) {
+            val list = mutableListOf(
+                Triple("STATS", "عام 📊", "الاحصائيات والادارة العامة"),
+                Triple("PENDING", "مراجعة ⏳", "طلبات الإعتماد"),
+                Triple("PROVIDERS", "المهنيين 🛠️", "إحصاء خدمات الدليل"),
+                Triple("CATEGORIES", "الأقسام 📂", "إدارة التخصصات والخدمات"),
+                Triple("BANNERS", "اللافتات إعلانات 📢", "إعلانات الشريط"),
+                Triple("COMPLAINTS", "البلاغات ⚠️", "شكاوى المستخدمين ضد المهنيين")
+            )
+            if (viewModel.loggedInUser == "OWNER" || viewModel.loggedInUser == "WAM2026") {
+                list.add(Triple("MODERATORS", "المشرفين 🛡️", "المشرفين والصلاحيات الحية"))
+            }
+            list.add(Triple("THEMES", "أيقونات ومظهر 🎨", "ألوان وحجم الأيقونات والدردشة"))
+            list.add(Triple("BACKUPS", "خصوصية وبيانات 🧼", "مسح سجلات، تصدير، احتياطي"))
+            list
+        }
 
         LazyRow(
             modifier = Modifier.fillMaxWidth(),
@@ -763,6 +768,14 @@ fun TabComplaintsMonitor(viewModel: AppViewModel, complaints: List<Complaint>) {
 
 @Composable
 fun TabModeratorsManagement(viewModel: AppViewModel, moderators: List<Moderator>) {
+    val isAuthorized = viewModel.loggedInUser == "OWNER" || viewModel.loggedInUser == "WAM2026"
+    if (!isAuthorized) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("🚫 عذراً، إدارة وتعديل حسابات المشرفين مقتصرة فقط على المالك والأدمن العام WAM2026.", color = Color.Red, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        }
+        return
+    }
+
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var isNewModCanEditCats by remember { mutableStateOf(true) }

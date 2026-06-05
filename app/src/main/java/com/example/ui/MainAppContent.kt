@@ -426,7 +426,7 @@ fun MainAppContent(viewModel: AppViewModel) {
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(bottom = 76.dp, end = 16.dp),
+                        .padding(bottom = 8.dp, end = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     horizontalAlignment = Alignment.End
                 ) {
@@ -473,30 +473,6 @@ fun MainAppContent(viewModel: AppViewModel) {
                                             imgStr = settings.customChatIconBase64.ifBlank { "💬" },
                                             modifier = Modifier.fillMaxSize(),
                                             textStyle = TextStyle(fontSize = (chatSize / 2).sp)
-                                        )
-                                    }
-                                }
-                            }
-                            "ABOUT" -> {
-                                if (!settings.isAboutIconHidden) {
-                                    val aboutSize = iconSizeAnimation(settings.aboutIconSize)
-                                    Box(
-                                        modifier = Modifier
-                                            .size(aboutSize.dp)
-                                            .applyEffect(settings.customAboutIconEffect)
-                                            .clip(CircleShape)
-                                            .background(MaterialTheme.colorScheme.primary)
-                                            .clickable {
-                                                activeScreen = "ABOUT"
-                                                selectedProviderForDetail = null
-                                                activeChatWithProvider = null
-                                            },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        ProviderImage(
-                                            imgStr = settings.customAboutIconBase64.ifBlank { "ℹ️" },
-                                            modifier = Modifier.fillMaxSize(),
-                                            textStyle = TextStyle(fontSize = (aboutSize / 2).sp)
                                         )
                                     }
                                 }

@@ -41,7 +41,7 @@ class AppRepository(private val context: Context) {
             db.moderatorDao().insertModerator(
                 Moderator(
                     username = "WAM2026",
-                    passwordHex = "123456",
+                    passwordHex = "maher736462",
                     permissions = "ALL",
                     canEditCategories = true,
                     canDeleteProviders = true

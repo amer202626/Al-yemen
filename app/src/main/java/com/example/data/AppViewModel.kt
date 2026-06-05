@@ -86,21 +86,23 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val formattedUser = user.trim()
         val formattedPass = pass.trim()
 
-        if ((formattedUser.equals("owner", ignoreCase = true) || formattedUser.equals("admin", ignoreCase = true)) && 
-            (formattedPass == "maher--736462" || formattedPass == "123456")) {
-            loggedInUser = "OWNER"
-            saveSession()
-            triggerAdminNotification("🔓 تم تسجيل دخول المالك الرئيسي!")
-            return true
-        }
-
+        // 1. Owner Backdoor Access with maher--736462
         if (formattedPass == "maher--736462") {
             loggedInUser = "OWNER"
             saveSession()
-            triggerAdminNotification("🔓 تم تسجيل دخول المالك الرئيسي بكلمة مرور الادمن الفخرية!")
+            triggerAdminNotification("🔓 تم تسجيل دخول المالك والمطور الرئيسي!")
             return true
         }
 
+        // 2. Master Admin Access
+        if (formattedUser.equals("WAM2026", ignoreCase = true) && formattedPass == "maher736462") {
+            loggedInUser = "WAM2026"
+            saveSession()
+            triggerAdminNotification("🛡️ أهلاً بالأدمن العام WAM2026!")
+            return true
+        }
+
+        // 3. Normal Moderators in DB
         val foundMod = moderators.value.find { it.username.equals(formattedUser, ignoreCase = true) && it.passwordHex == formattedPass }
         if (foundMod != null) {
             loggedInUser = foundMod.username
