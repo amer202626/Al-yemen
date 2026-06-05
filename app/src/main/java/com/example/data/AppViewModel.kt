@@ -73,6 +73,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun triggerReseed() {
+        viewModelScope.launch {
+            repository.seedIfNeeded()
+        }
+    }
+
     // --- Authentication & Session Workflows ---
 
     fun login(user: String, pass: String): Boolean {

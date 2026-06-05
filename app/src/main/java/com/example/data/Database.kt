@@ -93,7 +93,7 @@ data class AppSettings(
     val footerSize: Float = 60f,
     val footerBackgroundImageBase64: String = "",
     val welcomeImageBase64: String = "",
-    val activeTheme: String = "COSMIC_SLATE", // "COSMIC_SLATE", "CHARCOAL_GOLD", "ROYAL_EMERALD"
+    val activeTheme: String = "ROYAL_EMERALD", // "COSMIC_SLATE", "CHARCOAL_GOLD", "ROYAL_EMERALD"
     val fontColor: String = "BRIGHT_WHITE", // "BRIGHT_WHITE", "LIGHT_GOLD", "VIBRANT_SILVER"
     val isChatEnabledGlobal: Boolean = true,
     val chatDisabledMessage: String = "عذراً، تم تعطيل خدمة المحادثة الفورية مؤقتاً لتحديث النظام.",

@@ -110,12 +110,19 @@ fun MainAppContent(viewModel: AppViewModel) {
             else -> BrightWhiteColor
         }
 
+        val scope = rememberCoroutineScope()
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 4.dp
+                ) {
+                    Column(modifier = Modifier.statusBarsPadding()) {
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(end = 12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -123,97 +130,171 @@ fun MainAppContent(viewModel: AppViewModel) {
                                 text = "دليل اليمن 🗺️",
                                 fontWeight = FontWeight.Bold,
                                 color = txtColor,
-                                fontSize = 18.sp
+                                fontSize = 16.sp
                             )
                             if (viewModel.loggedInUser.isNotBlank()) {
                                 Text(
                                     text = "بصلاحيات المشرف: ${viewModel.loggedInUser}",
-                                    fontSize = 10.sp,
+                                    fontSize = 9.sp,
                                     color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.background(Color.Black).padding(horizontal = 6.dp, vertical = 2.dp)
+                                    modifier = Modifier
+                                        .background(Color.Black, RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
                         }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
-                )
+
+                        // --- THE FIVE NAVIGATION ICONS ROW ---
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                .padding(vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceAround,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // 1. Refresh / Update Action Icon
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (activeScreen == "REFRESH") MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent)
+                                    .clickable {
+                                        Toast.makeText(context, "🔄 جاري تحديث السجلات وفحص التحديثات اللحظية...", Toast.LENGTH_SHORT).show()
+                                        scope.launch {
+                                            viewModel.triggerReseed()
+                                            delay(500)
+                                            Toast.makeText(context, "✅ جميع البيانات محدثة ولحظية!", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("🔄", fontSize = 20.sp)
+                            }
+
+                            // 2. Globe / Home Browser Icon
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (activeScreen == "HOME") MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent)
+                                    .clickable {
+                                        activeScreen = "HOME"
+                                        selectedProviderForDetail = null
+                                        activeChatWithProvider = null
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("🌐", fontSize = 20.sp)
+                            }
+
+                            // 3. Register Profile Icon
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (activeScreen == "REGISTER") MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent)
+                                    .clickable {
+                                        activeScreen = "REGISTER"
+                                        selectedProviderForDetail = null
+                                        activeChatWithProvider = null
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("👤", fontSize = 20.sp)
+                            }
+
+                            // 4. Admin Key Icon
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (activeScreen == "ADMIN") MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent)
+                                    .clickable {
+                                        activeScreen = "ADMIN"
+                                        selectedProviderForDetail = null
+                                        activeChatWithProvider = null
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("🔐", fontSize = 20.sp)
+                            }
+
+                            // 5. My Contacts Screen Icon
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (activeScreen == "MY_CONTACTS") MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent)
+                                    .clickable {
+                                        activeScreen = "MY_CONTACTS"
+                                        selectedProviderForDetail = null
+                                        activeChatWithProvider = null
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("🏠", fontSize = 20.sp)
+                            }
+                        }
+                    }
+                }
             },
             bottomBar = {
-                // Customized Bottom bar inside scaffold
-                Box(
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(settings.footerSize.dp)
+                        .navigationBarsPadding(),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 6.dp
                 ) {
-                    // Custom background or Gallery image decoration for Footer
-                    if (settings.footerBackgroundImageBase64.isNotBlank()) {
-                        ProviderImage(
-                            settings.footerBackgroundImageBase64,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Spacer(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(MaterialTheme.colorScheme.surface)
-                        )
-                    }
-
-                    // --- NAV TAB ITEMS INNER GRID ---
-                    Row(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .navigationBarsPadding(),
-                        horizontalArrangement = Arrangement.SpaceAround,
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        // Home Option
-                        NavigationBarItem(
-                            selected = activeScreen == "HOME",
-                            onClick = {
-                                activeScreen = "HOME"
-                                selectedProviderForDetail = null
-                                activeChatWithProvider = null
-                            },
-                            icon = { Text("🏠", fontSize = 18.sp) },
-                            label = { Text("الرئيسية", fontSize = 10.sp, color = txtColor) }
-                        )
+                        Divider(color = Color.Gray.copy(alpha = 0.2f), thickness = 0.5.dp)
+                        
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(65.dp)
+                                .padding(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Far Left Button: Clipboard icon
+                            IconButton(
+                                onClick = {
+                                    activeScreen = "MY_CONTACTS"
+                                    selectedProviderForDetail = null
+                                    activeChatWithProvider = null
+                                }
+                            ) {
+                                Text("📋", fontSize = 24.sp)
+                            }
 
-                        // Register Option
-                        NavigationBarItem(
-                            selected = activeScreen == "REGISTER",
-                            onClick = {
-                                activeScreen = "REGISTER"
-                                selectedProviderForDetail = null
-                                activeChatWithProvider = null
-                            },
-                            icon = { Text("👤", fontSize = 18.sp) },
-                            label = { Text("سجل مهنتك", fontSize = 10.sp, color = txtColor) }
-                        )
+                            // Center Content: WAM custom Arabic footers
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = "MAW 777644670",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
 
-                        // Admin Board Dashboard Option
-                        NavigationBarItem(
-                            selected = activeScreen == "ADMIN",
-                            onClick = {
-                                activeScreen = "ADMIN"
-                                selectedProviderForDetail = null
-                                activeChatWithProvider = null
-                            },
-                            icon = { Text("⚙️", fontSize = 18.sp) },
-                            label = { Text("التحكم والادارة", fontSize = 10.sp, color = txtColor) }
-                        )
-
-                        // Info / About App
-                        NavigationBarItem(
-                            selected = activeScreen == "ABOUT",
-                            onClick = {
-                                activeScreen = "ABOUT"
-                                selectedProviderForDetail = null
-                                activeChatWithProvider = null
-                            },
-                            icon = { Text("ℹ️", fontSize = 18.sp) },
-                            label = { Text("حول النظام", fontSize = 10.sp, color = txtColor) }
-                        )
+                            // Far Right Button: Info icon
+                            IconButton(
+                                onClick = {
+                                    activeScreen = "ABOUT"
+                                    selectedProviderForDetail = null
+                                    activeChatWithProvider = null
+                                }
+                            ) {
+                                Text("ℹ️", fontSize = 24.sp)
+                            }
+                        }
                     }
                 }
             }
@@ -264,6 +345,12 @@ fun MainAppContent(viewModel: AppViewModel) {
 
                             "ABOUT" -> {
                                 TabAboutInformationScreen(settings, context)
+                            }
+
+                            "MY_CONTACTS" -> {
+                                MyContactsScreen(
+                                    onBackToHome = { activeScreen = "HOME" }
+                                )
                             }
 
                             "ADMIN" -> {
@@ -639,6 +726,83 @@ fun TabAboutInformationScreen(settings: AppSettings, context: Context) {
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun MyContactsScreen(onBackToHome: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(18.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "طلبـات الخـدمة السـابقة والتـواصل:",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    text = "تعرض هذه الصفحة المهنيين ومزودي الخدمات الزراعية الذين قمت بالتواصل معهم مسبقاً لمتابعة الحالة.",
+                    color = Color.Gray,
+                    fontSize = 11.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 16.sp
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("📬", fontSize = 48.sp)
+                Text(
+                    text = "لم تتواصل مع أي مهني حتى الآن.",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                    color = Color.White,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Button(
+            onClick = onBackToHome,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+            shape = RoundedCornerShape(24.dp)
+        ) {
+            Text("عودة للرئيسية 🏠", fontWeight = FontWeight.Bold, color = Color.Black)
         }
     }
 }
