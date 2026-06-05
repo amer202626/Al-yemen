@@ -1,681 +1,644 @@
 package com.example.ui
 
-import android.app.Activity
+import android.app.DownloadManager
+import android.content.Context
+import android.net.Uri
+import android.os.Environment
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.IntOffset
+import kotlinx.coroutines.delay
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.*
 import com.example.ui.theme.*
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainAppContent(viewModel: AppViewModel) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-
-    // Database states
+    val settings by viewModel.settingsState.collectAsState()
     val categoriesList by viewModel.categories.collectAsState()
-    val activeProvidersList = viewModel.filteredProviders.collectAsState().value
+    val providersList by viewModel.providers.collectAsState()
     val bannersList by viewModel.banners.collectAsState()
-    val settingsState by viewModel.appSettings.collectAsState()
+    val moderatorsList by viewModel.moderators.collectAsState()
+    val complaintsList by viewModel.complaints.collectAsState()
 
-    val settings = settingsState ?: AppSettings()
+    var activeScreen by remember { mutableStateOf("HOME") }
+    var selectedProviderForDetail by remember { mutableStateOf<ServiceProvider?>(null) }
+    var activeChatWithProvider by remember { mutableStateOf<ServiceProvider?>(null) }
 
-    // Double back tap handle
-    var lastBackPressTime by remember { mutableStateOf(0L) }
+    // Admin login form states
+    var adminUserField by remember { mutableStateOf("") }
+    var adminPassField by remember { mutableStateOf("") }
 
-    BackHandler(enabled = true) {
-        if (viewModel.currentScreen != "HOME") {
-            viewModel.currentScreen = "HOME"
-        } else {
-            val now = System.currentTimeMillis()
-            if (now - lastBackPressTime < 2000) {
-                // Exit app
-                (context as? Activity)?.finish()
-            } else {
-                lastBackPressTime = now
-                Toast.makeText(context, "🇾🇪 اضغط مرة أخرى للخروج من دليل اليمن", Toast.LENGTH_SHORT).show()
+    // AI Assistant simulation state
+    var showAiChatbox by remember { mutableStateOf(false) }
+    var aiQueryInput by remember { mutableStateOf("") }
+    val aiLogList = remember { mutableStateListOf<Pair<String, Boolean>>(
+        "أهلاً بك يا غالي! أنا مساعدك الذكي اليمني في المنصة، اسألني عن أي مهندس، سباك، أو كهربائي لمساعدتك!" to false
+    ) }
+
+    // --- 1. IN-APP UPDATE CHECK DIALOGUE ---
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    val packageVersionCode = 1 // App default version
+
+    LaunchedEffect(settings.latestVersionCode) {
+        if (settings.latestVersionCode > packageVersionCode) {
+            showUpdateDialog = true
+        }
+    }
+
+    if (showUpdateDialog) {
+        AlertDialog(
+            onDismissRequest = { showUpdateDialog = false },
+            title = { Text("🔄 تحديث جديد متوفر!") },
+            text = { Text("يوجد تحديث جديد للنسخة رقم ${settings.latestVersionCode} بالمنصة، هل تريد تحميله وتثبيته فوراً؟") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showUpdateDialog = false
+                        try {
+                            val request = DownloadManager.Request(Uri.parse(settings.latestVersionUrl))
+                                .setTitle("تحميل تحديث دليل اليمن")
+                                .setDescription("تحميل ملف APK التحديث اللحظي...")
+                                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "yemen_directory_update.apk")
+
+                            val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                            dm.enqueue(request)
+                            Toast.makeText(context, "📥 بدأ تحميل التحديث الجديد بالخلفية! يمكنك تثبيته من مجلد الداونلود فور الاكتمال.", Toast.LENGTH_LONG).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "فشل بدء التحميل التلقائي: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                ) {
+                    Text("تحميل التحديث 📥")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUpdateDialog = false }) {
+                    Text("قرأت لاحقاً")
+                }
             }
-        }
+        )
     }
 
-    // Direct floating direct overlay assistant dialog state
-    var showAssistantOverlayDialog by remember { mutableStateOf(false) }
-    var assistantOffsetStateX by remember { mutableStateOf(0f) }
-    var assistantOffsetStateY by remember { mutableStateOf(0f) }
-
-    LaunchedEffect(settings.assistantPositionX, settings.assistantPositionY) {
-        if (assistantOffsetStateX == 0f && assistantOffsetStateY == 0f) {
-            assistantOffsetStateX = settings.assistantPositionX
-            assistantOffsetStateY = settings.assistantPositionY
+    // --- Dynamic Background Theme Wrapping ---
+    YemenDirectoryTheme(activeTheme = settings.activeTheme) {
+        val txtColor = when (settings.fontColor) {
+            "LIGHT_GOLD" -> LightGoldColor
+            "VIBRANT_SILVER" -> VibrantSilverColor
+            else -> BrightWhiteColor
         }
-    }
 
-    YemenTheme(
-        themeChoice = settings.themeChoice,
-        customPrimaryHex = settings.customPrimaryColor,
-        customBgHex = settings.customBackgroundColor
-    ) {
         Scaffold(
             topBar = {
-                // --- CUSTOM TOP APP BAR ---
-                Surface(
-                    color = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 8.dp,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column {
-                        // Title bar with App Logo (clickable and counts backdoor entries)
+                TopAppBar(
+                    title = {
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .statusBarsPadding()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            modifier = Modifier.fillMaxWidth().padding(end = 12.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.clickable { viewModel.onLogoClick() } // Backdoor clickable logo
-                            ) {
-                                // Dynamic App Launcher Logo text representation
-                                Box(
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(MaterialTheme.colorScheme.primary),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("🇾🇪", fontSize = 18.sp)
-                                }
+                            Text(
+                                text = "دليل اليمن 🗺️",
+                                fontWeight = FontWeight.Bold,
+                                color = txtColor,
+                                fontSize = 18.sp
+                            )
+                            if (viewModel.loggedInUser.isNotBlank()) {
                                 Text(
-                                    text = settings.appName,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 18.sp,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontFamily = if (settings.fontStyle == "MONOSPACE") FontFamily.Monospace else FontFamily.Default
-                                )
-                            }
-
-                            // Dynamic quick language display badge
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(Color.DarkGray)
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = if (settings.activeLanguage == "AR") "عربي" else "EN",
-                                    color = Color.White,
+                                    text = "بصلاحيات المشرف: ${viewModel.loggedInUser}",
                                     fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.background(Color.Black).padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
                         }
-
-                        // Icons Strip according to topAppBarConfigItems
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.SpaceAround,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Order of configuration items
-                            val items = settings.topAppBarConfigItems.split(",")
-                            for (item in items) {
-                                when (item.uppercase().trim()) {
-                                    "HOME" -> {
-                                        IconButton(onClick = { viewModel.onHomeClick() }) {
-                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                Text("🏠", fontSize = 18.sp)
-                                                Text("الرئيسية", fontSize = 8.sp, color = if (viewModel.currentScreen == "HOME") MaterialTheme.colorScheme.primary else Color.Gray)
-                                            }
-                                        }
-                                    }
-                                    "LOGIN" -> {
-                                        IconButton(onClick = {
-                                            viewModel.currentScreen = if (viewModel.isLoggedIn) "ADMIN_DASHBOARD" else "LOGIN"
-                                        }) {
-                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                Text(if (viewModel.isLoggedIn) "🛡️" else "🔐", fontSize = 18.sp)
-                                                Text(if (viewModel.isLoggedIn) "اللوحة" else "دخول", fontSize = 8.sp, color = if (viewModel.currentScreen == "LOGIN") MaterialTheme.colorScheme.primary else Color.Gray)
-                                            }
-                                        }
-                                    }
-                                    "REGISTER" -> {
-                                        IconButton(onClick = { viewModel.currentScreen = "REGISTER" }) {
-                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                Text("👤", fontSize = 18.sp)
-                                                Text("انضمام", fontSize = 8.sp, color = if (viewModel.currentScreen == "REGISTER") MaterialTheme.colorScheme.primary else Color.Gray)
-                                            }
-                                        }
-                                    }
-                                    "LANG" -> {
-                                        IconButton(
-                                            onClick = {
-                                                val nextLang = if (settings.activeLanguage == "AR") "EN" else "AR"
-                                                scope.launch {
-                                                    viewModel.updateGeneralSettings(
-                                                        name = settings.appName,
-                                                        footerText = settings.adFooterText,
-                                                        footerHidden = settings.isFooterHidden,
-                                                        welcome = settings.welcomeMessage,
-                                                        phone = settings.supportPhone,
-                                                        email = settings.supportEmail,
-                                                        whatsapp = settings.supportWhatsapp,
-                                                        maintenance = settings.isMaintenanceMode,
-                                                        fcm = settings.enableFCMNotifications,
-                                                        assistantHidden = settings.isAssistantHidden,
-                                                        whitelist = settings.permittedDevices,
-                                                        sec2fa = settings.is2faEnabled,
-                                                        topBar = settings.topAppBarConfigItems,
-                                                        fontStyle = settings.fontStyle,
-                                                        fontColor = settings.fontColor,
-                                                        assistantSize = settings.assistantSize,
-                                                        assistantX = settings.assistantPositionX,
-                                                        assistantY = settings.assistantPositionY,
-                                                        assistantIconChar = settings.assistantIcon
-                                                    ).run {
-                                                        val repo = AppRepository(context)
-                                                        val s = repo.getAppSettingsDirect()
-                                                        repo.updateSettings(s.copy(activeLanguage = nextLang))
-                                                    }
-                                                }
-                                                Toast.makeText(context, "🌐 تم تغيير اللغة الفعالة للواجهة!", Toast.LENGTH_SHORT).show()
-                                            }
-                                        ) {
-                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                Text("🌐", fontSize = 18.sp)
-                                                Text("اللغة", fontSize = 8.sp)
-                                            }
-                                        }
-                                    }
-                                    "REFRESH" -> {
-                                        IconButton(
-                                            onClick = {
-                                                scope.launch {
-                                                    Toast.makeText(context, "🔄 تم تحديث جميع المجموعات الفورية ولحظية الآن!", Toast.LENGTH_SHORT).show()
-                                                }
-                                            }
-                                        ) {
-                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                Text("🔄", fontSize = 18.sp)
-                                                Text("تحديث", fontSize = 8.sp)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+                )
             },
             bottomBar = {
-                // --- CUSTOM INTEGRATED FOOTER AND ASSISTANTS ---
-                val trans = settings.footerTransparency
-                val fontS = settings.footerFontSize.sp
-                val padV = (10 * settings.footerHeightScale).dp
-                Surface(
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = trans),
-                    tonalElevation = 4.dp,
+                // Customized Bottom bar inside scaffold
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .navigationBarsPadding()
+                        .height(settings.footerSize.dp)
                 ) {
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        // Footer background image if loaded from Gallery
-                        if (settings.footerBackgroundImageBase64.isNotBlank()) {
-                            val bitmap = remember(settings.footerBackgroundImageBase64) {
-                                try {
-                                    val cleanStr = if (settings.footerBackgroundImageBase64.contains("base64,")) settings.footerBackgroundImageBase64.substringAfter("base64,") else settings.footerBackgroundImageBase64
-                                    val decodedBytes = android.util.Base64.decode(cleanStr, android.util.Base64.DEFAULT)
-                                    android.graphics.BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
-                                } catch (e: Exception) {
-                                    null
-                                }
-                            }
-                            if (bitmap != null) {
-                                Image(
-                                    bitmap = bitmap.asImageBitmap(),
-                                    contentDescription = "Footer Background",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.matchParentSize(),
-                                    alpha = 0.35f
-                                )
-                                // Dark scrim for readability
-                                Box(
-                                    modifier = Modifier
-                                        .matchParentSize()
-                                        .background(Color.Black.copy(alpha = 0.6f))
-                                )
-                            }
-                        }
-
-                        Column(
-                            modifier = Modifier.padding(vertical = padV, horizontal = 16.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                // Left Side: About App link Icon (ℹ️ / custom aboutIcon)
-                                if (!settings.isAboutIconHidden) {
-                                    IconButton(
-                                        onClick = { viewModel.currentScreen = "ABOUT" },
-                                        modifier = Modifier.size(settings.aboutIconSize.dp)
-                                    ) {
-                                        Text(settings.aboutIcon, fontSize = (settings.aboutIconSize * 0.6f).sp)
-                                    }
-                                } else {
-                                    Spacer(modifier = Modifier.size(settings.aboutIconSize.dp))
-                                }
-
-                                // Center Side: Advertising FooterText (Customizable, reduced size by 50%!)
-                                if (!settings.isFooterHidden) {
-                                    Text(
-                                        text = settings.adFooterText,
-                                        fontSize = fontS,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.Bold,
-                                        textAlign = TextAlign.Center,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-
-                                // Right Side: Previous user booking/service interactions icon
-                                IconButton(
-                                    onClick = { viewModel.currentScreen = "PREVIOUS_REQUESTS" },
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    Text("📋", fontSize = 20.sp)
-                                }
-                            }
-                            
-                            Text(
-                                text = "صنع بكل فخر يمني 🇾🇪 - WAM 2026",
-                                fontSize = (0.7f * settings.footerFontSize).sp,
-                                color = Color.Gray,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
+                    // Custom background or Gallery image decoration for Footer
+                    if (settings.footerBackgroundImageBase64.isNotBlank()) {
+                        ProviderImage(
+                            settings.footerBackgroundImageBase64,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Spacer(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(MaterialTheme.colorScheme.surface)
+                        )
                     }
-                }
-            },
-            floatingActionButton = {
-                // --- FLOATING ACTION ASSISTANT BUTTON (🤖) ---
-                if (!settings.isAssistantHidden) {
-                    Box(
+
+                    // --- NAV TAB ITEMS INNER GRID ---
+                    Row(
                         modifier = Modifier
-                            .offset {
-                                IntOffset(
-                                    assistantOffsetStateX.roundToInt(),
-                                    assistantOffsetStateY.roundToInt()
-                                )
-                            }
-                            .pointerInput(settings) {
-                                detectDragGestures(
-                                    onDragEnd = {
-                                        viewModel.updateSettingsDirect(settings.copy(
-                                            assistantPositionX = assistantOffsetStateX,
-                                            assistantPositionY = assistantOffsetStateY
-                                        ))
-                                    },
-                                    onDrag = { change, dragAmount ->
-                                        change.consume()
-                                        assistantOffsetStateX += dragAmount.x
-                                        assistantOffsetStateY += dragAmount.y
-                                    }
-                                )
-                            }
-                            .size(settings.assistantSize.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary)
-                            .clickable { showAssistantOverlayDialog = true },
-                        contentAlignment = Alignment.Center
+                            .fillMaxSize()
+                            .navigationBarsPadding(),
+                        horizontalArrangement = Arrangement.SpaceAround,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                            Text(settings.assistantIcon, fontSize = 20.sp)
-                            Text("خدمات", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.surface)
-                        }
+                        // Home Option
+                        NavigationBarItem(
+                            selected = activeScreen == "HOME",
+                            onClick = {
+                                activeScreen = "HOME"
+                                selectedProviderForDetail = null
+                                activeChatWithProvider = null
+                            },
+                            icon = { Text("🏠", fontSize = 18.sp) },
+                            label = { Text("الرئيسية", fontSize = 10.sp, color = txtColor) }
+                        )
+
+                        // Register Option
+                        NavigationBarItem(
+                            selected = activeScreen == "REGISTER",
+                            onClick = {
+                                activeScreen = "REGISTER"
+                                selectedProviderForDetail = null
+                                activeChatWithProvider = null
+                            },
+                            icon = { Text("👤", fontSize = 18.sp) },
+                            label = { Text("سجل مهنتك", fontSize = 10.sp, color = txtColor) }
+                        )
+
+                        // Admin Board Dashboard Option
+                        NavigationBarItem(
+                            selected = activeScreen == "ADMIN",
+                            onClick = {
+                                activeScreen = "ADMIN"
+                                selectedProviderForDetail = null
+                                activeChatWithProvider = null
+                            },
+                            icon = { Text("⚙️", fontSize = 18.sp) },
+                            label = { Text("التحكم والادارة", fontSize = 10.sp, color = txtColor) }
+                        )
+
+                        // Info / About App
+                        NavigationBarItem(
+                            selected = activeScreen == "ABOUT",
+                            onClick = {
+                                activeScreen = "ABOUT"
+                                selectedProviderForDetail = null
+                                activeChatWithProvider = null
+                            },
+                            icon = { Text("ℹ️", fontSize = 18.sp) },
+                            label = { Text("حول النظام", fontSize = 10.sp, color = txtColor) }
+                        )
                     }
                 }
             }
-        ) { innerPadding ->
-            // Toast / Alert simulator of backend notifications
-            LaunchedEffect(key1 = viewModel.adminInstantNotification) {
-                if (viewModel.adminInstantNotification != null) {
-                    Toast.makeText(context, viewModel.adminInstantNotification, Toast.LENGTH_LONG).show()
-                    viewModel.clearInstantNotification()
-                }
-            }
-
+        ) { paddingValues ->
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding)
                     .background(MaterialTheme.colorScheme.background)
+                    .padding(paddingValues)
             ) {
-                // Render the swapped screens
-                when (viewModel.currentScreen) {
-                    "HOME" -> {
-                        HomeScreen(
+                // --- SCREEN ROUTING MANAGER ---
+                when {
+                    activeChatWithProvider != null -> {
+                        LiveChatScreen(
+                            viewModel = viewModel,
+                            receiver = activeChatWithProvider!!,
+                            onBack = { activeChatWithProvider = null }
+                        )
+                    }
+
+                    selectedProviderForDetail != null -> {
+                        ProviderDetailScreen(
+                            p = selectedProviderForDetail!!,
                             viewModel = viewModel,
                             settings = settings,
                             categoriesList = categoriesList,
-                            providersList = activeProvidersList,
-                            bannersList = bannersList
+                            onBack = { selectedProviderForDetail = null },
+                            onOpenChatWithProvider = { activeChatWithProvider = it }
                         )
                     }
-                    "REGISTER" -> {
-                        RegisterScreen(
-                            viewModel = viewModel,
-                            settings = settings,
-                            categoriesList = categoriesList
-                        )
-                    }
-                    "LOGIN" -> {
-                        LoginScreen(
-                            viewModel = viewModel,
-                            settings = settings
-                        )
-                    }
-                    "ABOUT" -> {
-                        AboutScreen(viewModel = viewModel, settings = settings)
-                    }
-                    "PREVIOUS_REQUESTS" -> {
-                        PreviousRequestsScreen(viewModel = viewModel, settings = settings)
-                    }
-                    "PROVIDER_DETAIL" -> {
-                        viewModel.selectedProviderId?.let { id ->
-                            ProviderDetailScreen(
-                                viewModel = viewModel,
-                                settings = settings,
-                                providerId = id
-                            )
-                        } ?: run {
-                            viewModel.currentScreen = "HOME"
-                        }
-                    }
-                    "CHAT_ROOM" -> {
-                        ChatScreen(viewModel = viewModel, settings = settings)
-                    }
-                    "ADMIN_DASHBOARD" -> {
-                        if (viewModel.isLoggedIn) {
-                            AdminDashboardScreen(
-                                viewModel = viewModel,
-                                settings = settings
-                            )
-                        } else {
-                            viewModel.currentScreen = "LOGIN"
-                        }
-                    }
-                }
 
-                // FLOATING CIRCULAR POPUP ICON FOR CHAT (Direct interaction)
-                if (!settings.isChatIconDeleted && !settings.isChatIconHidden) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(start = 16.dp, bottom = 1.dp)
-                            .size(settings.chatIconSize.dp)
-                            .clip(CircleShape)
-                            .background(parseHexColor(settings.chatIconColor, Color(0xFF00C853)))
-                            .clickable {
-                                viewModel.currentScreen = "CHAT_ROOM"
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("💬", fontSize = (settings.chatIconSize * 0.45f).sp, color = Color.White)
-                    }
-                }
+                    else -> {
+                        when (activeScreen) {
+                            "HOME" -> {
+                                HomeScreen(
+                                    viewModel = viewModel,
+                                    settings = settings,
+                                    categoriesList = categoriesList,
+                                    providersList = providersList,
+                                    allBannersList = bannersList,
+                                    onSelectProvider = { selectedProviderForDetail = it }
+                                )
+                            }
 
-                // Invisible Overlay floating popups or panels
-            }
-        }
+                            "REGISTER" -> {
+                                RegisterScreen(viewModel, settings, categoriesList)
+                            }
 
-        // --- BACKDOOR AUTHENTICATION POPUP DIALOG --- (Absolutely Secret)
-        if (viewModel.showBackdoorAuthDialog) {
-            var backdoorPassField by remember { mutableStateOf("") }
-            var backdoorRememberField by remember { mutableStateOf(false) }
+                            "ABOUT" -> {
+                                TabAboutInformationScreen(settings, context)
+                            }
 
-            AlertDialog(
-                onDismissRequest = { viewModel.showBackdoorAuthDialog = false },
-                title = { Text("🔑 الدخول السري المرموق") },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("الرجاء إدخال رمز العبور السري الحصري للمالك للولوج المباشر:")
-                        OutlinedTextField(
-                            value = backdoorPassField,
-                            onValueChange = { backdoorPassField = it },
-                            label = { Text("كلمة المرور الخاصة:") },
-                            visualTransformation = PasswordVisualTransformation(),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(
-                                checked = backdoorRememberField,
-                                onCheckedChange = { backdoorRememberField = it }
-                            )
-                            Text("تذكر حفظ صلاحياتي بالبوابة", fontSize = 12.sp)
-                        }
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            viewModel.saveLoginState = backdoorRememberField
-                            val ok = viewModel.loginBackdoor(backdoorPassField)
-                            if (ok) {
-                                Toast.makeText(context, "✓ مرحباً بعودتك يا مالك الدليل!", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(context, "❌ رمز المرور المدخل غير صحيح!", Toast.LENGTH_SHORT).show()
+                            "ADMIN" -> {
+                                if (viewModel.loggedInUser.isNotBlank()) {
+                                    AdminDashboardScreen(
+                                        viewModel = viewModel,
+                                        settings = settings,
+                                        categoriesList = categoriesList,
+                                        providersList = providersList,
+                                        bannersList = bannersList,
+                                        moderatorsList = moderatorsList,
+                                        complaintsList = complaintsList
+                                    )
+                                } else {
+                                    // Render pristine Admin credential forms
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(24.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Card(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = RoundedCornerShape(16.dp),
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.padding(18.dp),
+                                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                                            ) {
+                                                Text("🛡️ تسجيل دخول الإدارة والمدراء والمالك", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Char(34).toString().let { Color.White })
+                                                OutlinedTextField(
+                                                    value = adminUserField,
+                                                    onValueChange = { adminUserField = it },
+                                                    label = { Text("اسم المستخدم المشرف") },
+                                                    modifier = Modifier.fillMaxWidth()
+                                                )
+                                                OutlinedTextField(
+                                                    value = adminPassField,
+                                                    onValueChange = { adminPassField = it },
+                                                    label = { Text("كلمة مرور الدخول") },
+                                                    visualTransformation = PasswordVisualTransformation(),
+                                                    modifier = Modifier.fillMaxWidth()
+                                                )
+                                                Button(
+                                                    onClick = {
+                                                        val ok = viewModel.login(adminUserField, adminPassField)
+                                                        if (ok) {
+                                                            adminUserField = ""
+                                                            adminPassField = ""
+                                                        } else {
+                                                            Toast.makeText(context, "❌ اسم المستخدم أو رمز المرور غير معتمد بمقاطعة اليمن!", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    },
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    Text("تسجيل الدخول الآمن")
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
-                    ) {
-                        Text("افتح البوابة")
                     }
-                },
-                dismissButton = {
-                    TextButton(onClick = { viewModel.showBackdoorAuthDialog = false }) { Text("إلغاء") }
                 }
-            )
-        }
 
-        // --- SMART ASSISTANT INTERACTIVE FAQ MODAL DIALOG ---
-        if (showAssistantOverlayDialog) {
-            var assistantInputText by remember { mutableStateOf("") }
-            var assistantChatHistory by remember {
-                mutableStateOf(
-                    listOf(
-                        "ASSISTANT" to "مرحباً بك! أنا مساعد دليل اليمن السريع 🤖. كيف يمكنني مساعدتك اليوم؟"
-                    )
-                )
-            }
+                // --- FLOATING AI ASSISTANT, CHAT & ABOUT TRIGGERS (DYNAMIC ORDERING & CONFIG) ---
+                val orderList = remember(settings.iconOrder) {
+                    settings.iconOrder.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                }
 
-            AlertDialog(
-                onDismissRequest = { showAssistantOverlayDialog = false },
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("🤖", fontSize = 24.sp)
-                        Text("المساعد التفاعلي الذكي", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    }
-                },
-                text = {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 350.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        // Chat messages stream
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                                .padding(8.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .verticalScroll(rememberScrollState()),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                for (msg in assistantChatHistory) {
-                                    val isMe = msg.first == "USER"
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(bottom = 76.dp, end = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalAlignment = Alignment.End
+                ) {
+                    orderList.forEach { type ->
+                        when (type) {
+                            "AI" -> {
+                                if (!settings.isAiIconHidden) {
+                                    val aiSize = iconSizeAnimation(settings.aiIconSize)
                                     Box(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        contentAlignment = if (isMe) Alignment.CenterEnd else Alignment.CenterStart
+                                        modifier = Modifier
+                                            .size(aiSize.dp)
+                                            .applyEffect(settings.customAiIconEffect)
+                                            .clip(CircleShape)
+                                            .background(CharcoalGoldPrimary)
+                                            .clickable { showAiChatbox = !showAiChatbox },
+                                        contentAlignment = Alignment.Center
                                     ) {
-                                        Surface(
-                                            color = if (isMe) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer,
-                                            shape = RoundedCornerShape(
-                                                topStart = 12.dp,
-                                                topEnd = 12.dp,
-                                                bottomStart = if (isMe) 12.dp else 0.dp,
-                                                bottomEnd = if (isMe) 0.dp else 12.dp
-                                            ),
-                                            tonalElevation = 1.dp
-                                        ) {
+                                        ProviderImage(
+                                            imgStr = settings.customAiIconBase64.ifBlank { "🤖" },
+                                            modifier = Modifier.fillMaxSize(),
+                                            textStyle = TextStyle(fontSize = (aiSize / 2).sp)
+                                        )
+                                    }
+                                }
+                            }
+                            "CHAT" -> {
+                                if (!settings.isChatIconHidden) {
+                                    val chatSize = iconSizeAnimation(settings.chatIconSize)
+                                    Box(
+                                        modifier = Modifier
+                                            .size(chatSize.dp)
+                                            .applyEffect(settings.customChatIconEffect)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF25D366))
+                                            .clickable {
+                                                activeScreen = "HOME"
+                                                selectedProviderForDetail = null
+                                                activeChatWithProvider = null
+                                                Toast.makeText(context, "استخدم البحث لإيجاد المهني والدردشة بروح يمنية طيبة!", Toast.LENGTH_SHORT).show()
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        ProviderImage(
+                                            imgStr = settings.customChatIconBase64.ifBlank { "💬" },
+                                            modifier = Modifier.fillMaxSize(),
+                                            textStyle = TextStyle(fontSize = (chatSize / 2).sp)
+                                        )
+                                    }
+                                }
+                            }
+                            "ABOUT" -> {
+                                if (!settings.isAboutIconHidden) {
+                                    val aboutSize = iconSizeAnimation(settings.aboutIconSize)
+                                    Box(
+                                        modifier = Modifier
+                                            .size(aboutSize.dp)
+                                            .applyEffect(settings.customAboutIconEffect)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.primary)
+                                            .clickable {
+                                                activeScreen = "ABOUT"
+                                                selectedProviderForDetail = null
+                                                activeChatWithProvider = null
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        ProviderImage(
+                                            imgStr = settings.customAboutIconBase64.ifBlank { "ℹ️" },
+                                            modifier = Modifier.fillMaxSize(),
+                                            textStyle = TextStyle(fontSize = (aboutSize / 2).sp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // --- CHATTER SIMULATED AI POPUP LAYER ---
+                if (showAiChatbox) {
+                    AlertDialog(
+                        onDismissRequest = { showAiChatbox = false },
+                        title = { Text("🤖 مساعد دليل اليمن الذكي") },
+                        text = {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(180.dp)
+                                        .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                                        .padding(6.dp)
+                                ) {
+                                    val state = rememberScrollState()
+                                    Column(modifier = Modifier.verticalScroll(state)) {
+                                        for (log in aiLogList) {
                                             Text(
-                                                text = msg.second,
-                                                fontSize = 12.sp,
-                                                color = if (isMe) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer,
-                                                modifier = Modifier.padding(10.dp)
+                                                text = (if (log.second) "👤 أنت: " else "🤖 الذكاء: ") + log.first,
+                                                fontSize = 11.sp,
+                                                color = if (log.second) Color.LightGray else CharcoalGoldAccent,
+                                                modifier = Modifier.padding(bottom = 6.dp)
                                             )
                                         }
                                     }
                                 }
-                            }
-                        }
-
-                        // Quick action chips
-                        Text("💡 أسئلة شائعة اقترحها لك:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Row(
-                            modifier = Modifier.horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            val suggestQuestions = listOf(
-                                "ماهي الأقسام",
-                                "كيف أتصل بمقدم خدمة",
-                                "ما هو رقم الدعم"
-                            )
-                            for (q in suggestQuestions) {
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(MaterialTheme.colorScheme.primaryContainer)
-                                        .clickable {
-                                            val query = q
-                                            val reply = when {
-                                                query.contains("أقسام") || query.contains("اقسام") -> {
-                                                    "الأقسام والمهن المتاحة بالدليل حالياً هي: \n" + categoriesList.joinToString("\n") { "• ${it.imageBase64} ${it.nameAr}" }
-                                                }
-                                                query.contains("أتصل") || query.contains("اتصل") -> {
-                                                    "للاتصال بأي مهني:\n1. اختر القسم المناسب.\n2. انقر على ملف المهني.\n3. اضغط زر الاتصال الأخضر للتواصل مباشرة عبر الهاتف أو الواتساب."
-                                                }
-                                                query.contains("الدعم") || query.contains("دعم") -> {
-                                                    "رقم الدعم الفني الرسمي لدليل اليمن هو: ${settings.supportPhone} \n(MAW 777644670) - راسلنا لحل أي مشكلة فوراً."
-                                                }
-                                                else -> "أهلاً بك! دليل اليمن يرحب باستفسارك المتميز."
-                                            }
-                                            assistantChatHistory = assistantChatHistory + (query to reply)
-                                        }
-                                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                                ) {
-                                    Text(q, fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-
-                        // Input control
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedTextField(
-                                value = assistantInputText,
-                                onValueChange = { assistantInputText = it },
-                                placeholder = { Text("اكتب استفسارك هنا...") },
-                                modifier = Modifier.weight(1f),
-                                textStyle = LocalTextStyle.current.copy(color = MaterialTheme.colorScheme.onSurface),
-                                singleLine = true,
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                    unfocusedBorderColor = Color.Gray,
-                                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                                Spacer(modifier = Modifier.height(6.dp))
+                                OutlinedTextField(
+                                    value = aiQueryInput,
+                                    onValueChange = { aiQueryInput = it },
+                                    placeholder = { Text("اسألني: من هم أفضل السباكين بصنعاء؟") },
+                                    modifier = Modifier.fillMaxWidth()
                                 )
-                            )
-
-                            IconButton(
-                                onClick = {
-                                    if (assistantInputText.isNotBlank()) {
-                                        val query = assistantInputText.trim()
-                                        val reply = when {
-                                            query.contains("أقسام") || query.contains("اقسام") -> {
-                                                "الأقسام والمهن المتاحة بالدليل حالياً هي: \n" + categoriesList.joinToString("\n") { "• ${it.imageBase64} ${it.nameAr}" }
-                                            }
-                                            query.contains("أتصل") || query.contains("اتصل") || query.contains("تواصل") -> {
-                                                "للاتصال بأي مهني:\n1. اختر القسم المناسب.\n2. انقر على ملف المهني.\n3. اضغط زر الاتصال الأخضر للتواصل مباشرة عبر الهاتف أو الواتساب."
-                                            }
-                                            query.contains("الدعم") || query.contains("دعم") || query.contains("رقم") -> {
-                                                "رقم الدعم الفني الرسمي لدليل اليمن هو: ${settings.supportPhone} \n(MAW 777644670) - راسلنا لحل أي مشكلة فوراً."
-                                            }
-                                            else -> "تعديل الإدارة: مرحباً بك! تساؤلك قيد التحليل والدعم. يمكنك الاتصال بخط المساعدة الرسمي ${settings.supportPhone} للحصول على دعم مخصص وسريع!"
-                                        }
-                                        assistantChatHistory = assistantChatHistory + (query to reply)
-                                        assistantInputText = ""
-                                    }
-                                },
-                                modifier = Modifier
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary)
-                            ) {
-                                Text("✉️", color = Color.White)
+                            }
+                        },
+                        confirmButton = {
+                            Button(onClick = {
+                                if (aiQueryInput.isNotBlank()) {
+                                    val userQuery = aiQueryInput.trim()
+                                    aiLogList.add(userQuery to true)
+                                    aiQueryInput = ""
+                                    
+                                    // Generate highly robust simulated directory replies
+                                    val reply = generateAiSimulatedResp(userQuery, providersList, categoriesList)
+                                    aiLogList.add(reply to false)
+                                }
+                            }) {
+                                Text("إرسال")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showAiChatbox = false }) {
+                                Text("إغلاق")
                             }
                         }
+                    )
+                }
+
+                // --- POPUP NOTIFICATION CENTER ALERT ---
+                if (viewModel.adminInstantNotification.isNotBlank()) {
+                    LaunchedEffect(viewModel.adminInstantNotification) {
+                        delay(4000)
+                        viewModel.adminInstantNotification = ""
                     }
-                },
-                confirmButton = {
-                    TextButton(onClick = { showAssistantOverlayDialog = false }) {
-                        Text("إغلاق", fontWeight = FontWeight.Bold)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .align(Alignment.TopCenter)
+                            .padding(12.dp)
+                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp))
+                            .padding(14.dp)
+                    ) {
+                        Text(
+                            text = viewModel.adminInstantNotification,
+                            color = Color.Black,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
+            }
+        }
+    }
+}
+
+// --- Dynamic rotation or glow visual effects mapper ---
+@Composable
+fun Modifier.applyEffect(effect: String): Modifier {
+    if (effect == "ROTATE") {
+        val infiniteTransition = rememberInfiniteTransition()
+        val rotation by infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(4000, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
             )
+        )
+        return this.graphicsLayer { rotationZ = rotation }
+    }
+    if (effect == "GLOW") {
+        val infiniteTransition = rememberInfiniteTransition()
+        val scalePulse by infiniteTransition.animateFloat(
+            initialValue = 1f,
+            targetValue = 1.15f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1200, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            )
+        )
+        return this.scale(scalePulse)
+    }
+    return this
+}
+
+// Helper icons mapping size calculation
+@Composable
+fun iconSizeAnimation(pctSize: Float): Float {
+    // defaults baseline to 60dp, maps percentage scale
+    return (60f * (pctSize / 100f)).coerceAtLeast(30f).coerceAtMost(100f)
+}
+
+// Simulated intelligent search agent
+fun generateAiSimulatedResp(query: String, providers: List<ServiceProvider>, categories: List<Category>): String {
+    val q = query.lowercase()
+    if (q.contains("سباك") || q.contains("plumb")) {
+        val plumbs = providers.filter { it.mainCategoryId == 2 && !it.isBlocked }
+        if (plumbs.isNotEmpty()) {
+            return "وجدت لك عدد ${plumbs.size} سباكين معتمدين باليمن! منهم المهندس ${plumbs.first().name} المتواجد بـ ${plumbs.first().neighborhood} للتواصل: ${plumbs.first().phoneNumber}."
+        }
+    }
+    if (q.contains("أفضل") || q.contains("مميز") || q.contains("rate") || q.contains("best")) {
+        val top = providers.filter { !it.isBlocked }.maxByOrNull { it.rating }
+        if (top != null) {
+            return "المهني الأعلى تقييماً بالمنصة حالياً هو ${top.name} بتقييم ${top.rating} نجوم! يعمل بمجال تخصص مميز ويمكنك الاتصال به مباشرة."
+        }
+    }
+    return "باقي التخصصات المتاحة هي: الكهرباء، الصيانة، والخياطة. ابحث عن منطقتك بصنعاء أو ادخل الملف للاتصال بالشركاء مباشرة!"
+}
+
+// --- ABOUT & INFO VIEW SCREEN --- (Cleans up copyright footer representation cleanly)
+@Composable
+fun TabAboutInformationScreen(settings: AppSettings, context: Context) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(18.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        if (settings.isAboutImageReplacesContent && settings.aboutImageBase64.isNotBlank()) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(300.dp),
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(4.dp)
+            ) {
+                ProviderImage(
+                    imgStr = settings.aboutImageBase64,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        } else {
+            if (settings.aboutImageBase64.isNotBlank()) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    elevation = CardDefaults.cardElevation(2.dp)
+                ) {
+                    ProviderImage(
+                        imgStr = settings.aboutImageBase64,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+            if (!settings.isAboutContentTextDeleted) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = settings.aboutTitle.ifBlank { "دليل اليمن لربط المهنيين ومزودي الخدمات" },
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = CharcoalGoldPrimary,
+                            textAlign = TextAlign.Center
+                        )
+                        Text(
+                            text = settings.aboutSubtitle.ifBlank { "الاصدار المستمر الآمن: V1.0.0" },
+                            fontSize = 11.sp,
+                            color = Color.Gray,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("💡 تفاصيل ومعلومات التطبيق:", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        val detailsStr = settings.aboutDetails.ifBlank {
+                            "• يتيح لك التطبيق تصفح كافة مقدمي الخدمات المهنية باليمن والاطلاع على أرقام هواتفهم ومواقع عملهم بشكل مجاني تماماً.\n• يمكنك التقييم وترك البلاغات لمساعدة المشرفين على تحسين وضمان جودة الخدمات بالبلاد.\n• للاستفسار أو الدعم الفني، تواصل مع فريق الإشراف أو المالك الرئيسي عبر الحساب المعتمد."
+                        }
+                        detailsStr.split("\n").forEach { line ->
+                            if (line.isNotBlank()) {
+                                Text(line, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

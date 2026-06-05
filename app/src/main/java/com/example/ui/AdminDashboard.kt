@@ -1,11 +1,18 @@
 package com.example.ui
 
+import android.content.Context
+import android.graphics.BitmapFactory
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -13,24 +20,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import com.example.data.*
 import com.example.ui.theme.*
 
+// --- Compression for Admin Pictures upload ---
 fun compressAndResizeImageAdmin(bytes: ByteArray): String {
-    return try {
-        val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return android.util.Base64.encodeToString(bytes, android.util.Base64.DEFAULT)
-        val maxDimension = 600
+    try {
+        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return android.util.Base64.encodeToString(bytes, android.util.Base64.DEFAULT)
+        val maxDimension = 500
         val originalWidth = bitmap.width
         val originalHeight = bitmap.height
         var newWidth = originalWidth
@@ -48,364 +49,286 @@ fun compressAndResizeImageAdmin(bytes: ByteArray): String {
 
         val resizedBitmap = android.graphics.Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
         val outputStream = java.io.ByteArrayOutputStream()
-        resizedBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, outputStream)
+        resizedBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 65, outputStream)
         val byteArray = outputStream.toByteArray()
-        android.util.Base64.encodeToString(byteArray, android.util.Base64.NO_WRAP)
+        return android.util.Base64.encodeToString(byteArray, android.util.Base64.NO_WRAP)
     } catch (e: Exception) {
-        android.util.Base64.encodeToString(bytes, android.util.Base64.DEFAULT)
+        return android.util.Base64.encodeToString(bytes, android.util.Base64.DEFAULT)
     }
 }
 
 @Composable
-fun AdminDashboardScreen(viewModel: AppViewModel, settings: AppSettings) {
-    var selectedTab by remember { mutableStateOf(0) }
+fun AdminDashboardScreen(
+    viewModel: AppViewModel,
+    settings: AppSettings,
+    categoriesList: List<Category>,
+    providersList: List<ServiceProvider>,
+    bannersList: List<Banner>,
+    moderatorsList: List<Moderator>,
+    complaintsList: List<Complaint>
+) {
     val context = LocalContext.current
+    var selectedDashboardTab by remember { mutableStateOf("STATS") }
 
-    val tabs = listOf(
-        "📂 الأقسام",
-        "👤 المهنيين",
-        "📢 لافتات الإعلان",
-        "⚙️ الإعدادات السرية",
-        "⚠️ البلاغات",
-        "📊 إحصائيات",
-        "💾 النسخ الاحتياطي",
-        "🛡️ المشرفين"
-    )
+    // Text Color
+    val txtColor = when (settings.fontColor) {
+        "LIGHT_GOLD" -> LightGoldColor
+        "VIBRANT_SILVER" -> VibrantSilverColor
+        else -> BrightWhiteColor
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(8.dp)
+            .padding(12.dp)
     ) {
-        // Upper row info
-        Row(
+        // --- STATISTICS METRICS HEADERS AT TOP ---
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+            shape = RoundedCornerShape(12.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(bottom = 12.dp)
         ) {
-            Column {
+            Column(modifier = Modifier.padding(10.dp)) {
                 Text(
-                    text = if (viewModel.loggedInUser == "OWNER") "👑 بوابة المالك السرية" else "🛡️ لوحة الإدارة العامة",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = MaterialTheme.colorScheme.primary
+                    text = "📊 إحصائيات الأداء ودليل اليمن الحية:",
+                    color = txtColor,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
                 )
-                Text("المستخدم الحالي: ${viewModel.loggedInUser}", fontSize = 11.sp, color = Color.Gray)
-            }
-
-            // Quick Logout button directly inside the app control panel!
-            Button(
-                onClick = {
-                    viewModel.logout()
-                    Toast.makeText(context, "🚪 تم تسجيل الخروج بنجاح!", Toast.LENGTH_SHORT).show()
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-            ) {
-                Text("خروج 🚪", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    // Metric 1
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                        Text("Active Users", fontSize = 9.sp, color = Color.Gray)
+                        Text("${viewModel.activeUsersCount}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text("مستخدم نشط 👥", fontSize = 8.sp, color = Color.LightGray)
+                    }
+                    Divider(modifier = Modifier.width(1.dp).height(24.dp).align(Alignment.CenterVertically), color = Color.Gray)
+                    // Metric 2
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                        Text("Providers", fontSize = 9.sp, color = Color.Gray)
+                        Text("${providersList.filter { !it.isPending }.size}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+                        Text("مهني معتمد 🛠️", fontSize = 8.sp, color = Color.LightGray)
+                    }
+                    Divider(modifier = Modifier.width(1.dp).height(24.dp).align(Alignment.CenterVertically), color = Color.Gray)
+                    // Metric 3
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                        Text("Calls Count", fontSize = 9.sp, color = Color.Gray)
+                        Text("${viewModel.appCallsCount}", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = CharcoalGoldPrimary)
+                        Text("إتصالات تواصل 📞", fontSize = 8.sp, color = Color.LightGray)
+                    }
+                    Divider(modifier = Modifier.width(1.dp).height(24.dp).align(Alignment.CenterVertically), color = Color.Gray)
+                    // Metric 4
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                        Text("Pending Req", fontSize = 9.sp, color = Color.Gray)
+                        val pendingCount = providersList.filter { it.isPending }.size
+                        Text("$pendingCount", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (pendingCount > 0) MaterialTheme.colorScheme.error else Color.White)
+                        Text("طلبات قيد النظر ⏳", fontSize = 8.sp, color = Color.LightGray)
+                    }
+                }
             }
         }
 
-        // Horizontal Category tabs
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(bottom = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        // --- DASHBOARD NAVIGATION CHIPS ---
+        val tabs = listOf(
+            Triple("STATS", "عام 📊", "الاحصائيات والادارة العامة"),
+            Triple("PENDING", "مراجعة ⏳", "طلبات الإعتماد"),
+            Triple("PROVIDERS", "المهنيين 🛠️", "إحصاء خدمات الدليل"),
+            Triple("CATEGORIES", "الأقسام 📂", "إدارة التخصصات والخدمات"),
+            Triple("BANNERS", "اللافتات إعلانات 📢", "إعلانات الشريط"),
+            Triple("COMPLAINTS", "البلاغات ⚠️", "شكاوى المستخدمين ضد المهنيين"),
+            Triple("MODERATORS", "المشرفين 🛡️", "المشرفين والصلاحيات الحية"),
+            Triple("THEMES", "أيقونات ومظهر 🎨", "ألوان وحجم الأيقونات والدردشة"),
+            Triple("BACKUPS", "خصوصية وبيانات 🧼", "مسح سجلات، تصدير، احتياطي")
+        )
+
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            tabs.forEachIndexed { index, title ->
-                ElevatedFilterChip(
-                    selected = selectedTab == index,
-                    onClick = { selectedTab = index },
-                    label = { Text(title, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+            items(tabs) { t ->
+                FilterChip(
+                    selected = selectedDashboardTab == t.first,
+                    onClick = { selectedDashboardTab = t.first },
+                    label = { Text(t.second) }
                 )
             }
         }
 
-        Divider(color = GrayBorder, modifier = Modifier.padding(bottom = 12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-        // Tab Screen selection
+        // --- ACTIVE DASHBOARD PAGE VIEW CONTENT ---
         Box(modifier = Modifier.weight(1f)) {
-            when (selectedTab) {
-                0 -> TabCategories(viewModel)
-                1 -> TabProviders(viewModel, settings)
-                2 -> TabBanners(viewModel)
-                3 -> TabSettings(viewModel, settings)
-                4 -> TabComplaints(viewModel)
-                5 -> TabStatistics(viewModel)
-                6 -> TabBackup(viewModel)
-                7 -> TabModerators(viewModel)
+            when (selectedDashboardTab) {
+                "STATS" -> TabGeneralWelcomeScreen(viewModel)
+                "PENDING" -> TabPendingApprovalScreen(viewModel, providersList, categoriesList)
+                "PROVIDERS" -> TabManageProvidersScreen(viewModel, providersList, categoriesList)
+                "CATEGORIES" -> TabManageCategoriesScreen(viewModel, categoriesList)
+                "BANNERS" -> TabManageBannersCampaigns(viewModel, bannersList)
+                "COMPLAINTS" -> TabComplaintsMonitor(viewModel, complaintsList)
+                "MODERATORS" -> TabModeratorsManagement(viewModel, moderatorsList)
+                "THEMES" -> TabThemeIconConfiguration(viewModel, settings, context)
+                "BACKUPS" -> TabDatabasePrivacyBackups(viewModel, settings, context)
             }
         }
     }
 }
 
-// --- TAB 1: CATEGORY CONTROLLER ---
+// --- SUB-SCREENS FOR EACH ADMIN TAB CONTROL ---
+
 @Composable
-fun TabCategories(viewModel: AppViewModel) {
-    val categoriesList by viewModel.categories.collectAsState()
-    var nameAr by remember { mutableStateOf("") }
-    var nameEn by remember { mutableStateOf("") }
-    var emojiIcon by remember { mutableStateOf("🔧") }
-    
-    // Sub-category customization fields
-    var isSubCategory by remember { mutableStateOf(false) }
-    var selectedParentId by remember { mutableStateOf<Int?>(null) }
-    var showParentDropdown by remember { mutableStateOf(false) }
-
-    // Category Editing Fields
-    var editingCategory by remember { mutableStateOf<Category?>(null) }
-    var editNameAr by remember { mutableStateOf("") }
-    var editNameEn by remember { mutableStateOf("") }
-    var editImgBase64 by remember { mutableStateOf("") }
-    var editIsSub by remember { mutableStateOf(false) }
-    var editParentId by remember { mutableStateOf<Int?>(null) }
-    var editParentDropdown by remember { mutableStateOf(false) }
-
-    val context = LocalContext.current
-
-    // Launcher for Custom Gallery Image selection for Categories!
-    val categoryImageLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
-            try {
-                context.contentResolver.openInputStream(uri)?.use { stream ->
-                    val bytes = stream.readBytes()
-                    val base64 = compressAndResizeImageAdmin(bytes)
-                    emojiIcon = "base64,$base64"
-                    Toast.makeText(context, "🖼️ تم تحميل واختيار صورة المعرض بنجاح بعد الضغط التلقائي!", Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: Exception) {
-                Toast.makeText(context, "❌ فشل تحميل الصورة: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    // Launcher for editing categories custom gallery image picker
-    val editCategoryImageLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
-            try {
-                context.contentResolver.openInputStream(uri)?.use { stream ->
-                    val bytes = stream.readBytes()
-                    val base64 = compressAndResizeImageAdmin(bytes)
-                    editImgBase64 = "base64,$base64"
-                    Toast.makeText(context, "🖼️ تم تحميل واختيار صورة المعرض بنجاح بعد الضغط التلقائي!", Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: Exception) {
-                Toast.makeText(context, "❌ فشل قراءة الصورة: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxSize()
+fun TabGeneralWelcomeScreen(viewModel: AppViewModel) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        item {
-            Card {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("📂 إضافة قسم مهني جديد (أساسي / فرعي):", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    
-                    OutlinedTextField(
-                        value = nameAr,
-                        onValueChange = { nameAr = it },
-                        label = { Text("الاسم باللغة العربية:") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("🏠 لوحة تحكم صاحب العمل والمدراء", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Text(
+                    "بصفتك مديراً، يمكنك مراجعة طلبات الانضمام، الموافقة على الطلبات المقدمة، تعديل الرسوم، تخصيص درجات تقييم الأعضاء والتحكم السلس في مظاهر وأنظمة تشغيل تطبيق دليل اليمن.",
+                    fontSize = 12.sp, color = Color.Gray
+                )
+            }
+        }
 
-                    OutlinedTextField(
-                        value = nameEn,
-                        onValueChange = { nameEn = it },
-                        label = { Text("الاسم باللغة الإنجليزية:") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("👥 تواصل سريع وتجريبي للتقييم:", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Button(onClick = { viewModel.activeUsersCount += (3..8).random() }) {
+                    Text("محاكاة زيادة عدد المستخدمين النشطين 🚀")
+                }
+                Button(onClick = { viewModel.logout() }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) {
+                    Text("تسجيل الخروج من لوحة التحكم 🔒")
+                }
+            }
+        }
+    }
+}
 
-                    // Parent/Sub category toggle select
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("نوع القسم:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = !isSubCategory, onClick = { isSubCategory = false })
-                            Text("رئيسي أساسي", fontSize = 11.sp)
+@Composable
+fun TabPendingApprovalScreen(viewModel: AppViewModel, list: List<ServiceProvider>, categories: List<Category>) {
+    val pendings = list.filter { it.isPending }
+    if (pendings.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("🎉 لا توجد حالياً طلبات مهنيين جديدة معلقة قيد المراجعة.", color = Color.Gray, fontSize = 12.sp)
+        }
+    } else {
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(pendings) { p ->
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Box(modifier = Modifier.size(50.dp).clip(RoundedCornerShape(8.dp))) {
+                                ProviderImage(p.profileImageBase64, modifier = Modifier.fillMaxSize())
+                            }
+                            Column {
+                                Text(p.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text("📞 الهاتف: ${p.phoneNumber}", fontSize = 12.sp, color = Color.Gray)
+                                Text("📍 الموقع: ${p.neighborhood}", fontSize = 12.sp, color = Color.Gray)
+                            }
                         }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = isSubCategory, onClick = { isSubCategory = true })
-                            Text("فرعي تخصصي", fontSize = 11.sp)
-                        }
-                    }
 
-                    if (isSubCategory) {
-                        Box {
-                            val parentName = categoriesList.find { it.id == selectedParentId }?.nameAr ?: "اختر القسم الرئيسي الحاضن..."
+                        // Display ID card if available
+                        if (p.idCardImageBase64.isNotBlank()) {
+                            Text(" بطاقة الهوية الوطنية المرفقة للمهني للتوثيق:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = CharcoalGoldPrimary)
+                            Box(modifier = Modifier.fillMaxWidth().height(140.dp).clip(RoundedCornerShape(8.dp))) {
+                                ProviderImage(p.idCardImageBase64, modifier = Modifier.fillMaxSize())
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             Button(
-                                onClick = { showParentDropdown = true },
-                                modifier = Modifier.fillMaxWidth()
+                                onClick = { viewModel.updateProvider(p.copy(isPending = false)) },
+                                modifier = Modifier.weight(1f)
                             ) {
-                                Text("الرئيسي الحاضن: $parentName 🔽", fontSize = 12.sp)
+                                Text("موافقة واعتماد ✔")
                             }
-                            DropdownMenu(
-                                expanded = showParentDropdown,
-                                onDismissRequest = { showParentDropdown = false }
+
+                            Button(
+                                onClick = { viewModel.deleteProvider(p) },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                             ) {
-                                categoriesList.filter { it.parentId == null }.forEach { pCat ->
-                                    DropdownMenuItem(
-                                        text = { Text(pCat.nameAr) },
-                                        onClick = {
-                                            selectedParentId = pCat.id
-                                            showParentDropdown = false
-                                        }
-                                    )
-                                }
+                                Text("رفض وحذف ✖")
                             }
                         }
-                    }
-
-                    // Photo Selection Row support: Emoji or Base64 Gallery image representation
-                    Text("شعار أو صورة القسم مخصص:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Button(
-                            onClick = { categoryImageLauncher.launch("image/*") },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("صورة من الاستوديو 🖼️", fontSize = 11.sp)
-                        }
-
-                        // Preview Category Icon shape
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color.DarkGray),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            ProviderImage(imgStr = emojiIcon, modifier = Modifier.fillMaxSize())
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("أو اختر رمز سريع:")
-                        val emojis = listOf("🔧", "⚡", "🍲", "🧵", "📱", "🚗", "🏠", "💼", "🧹", "💅")
-                        Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                            for (em in emojis) {
-                                Text(
-                                    text = em,
-                                    fontSize = 20.sp,
-                                    modifier = Modifier
-                                        .padding(4.dp)
-                                        .clickable { emojiIcon = em }
-                                )
-                            }
-                        }
-                    }
-
-                    Button(
-                        onClick = {
-                            if (!viewModel.canCurrentAdminEditCategories()) {
-                                Toast.makeText(context, "❌ عذراً! لا تملك صلاحية إضافة أو تعديل الأقسام.", Toast.LENGTH_LONG).show()
-                                return@Button
-                            }
-                            if (nameAr.isNotBlank()) {
-                                val finalImage = emojiIcon
-                                val parentIdToSave = if (isSubCategory) selectedParentId else null
-                                val newCat = Category(
-                                    nameAr = nameAr,
-                                    nameEn = nameEn,
-                                    imageBase64 = finalImage,
-                                    parentId = parentIdToSave
-                                )
-                                viewModel.addCategoryDirectFlow(newCat)
-                                nameAr = ""
-                                nameEn = ""
-                                emojiIcon = "🔧"
-                                selectedParentId = null
-                                isSubCategory = false
-                                Toast.makeText(context, "📂 تم إضافة وتعيين حساب المجموعات بنجاح!", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("حفظ وإدراج القسم بالدليل 💾")
                     }
                 }
             }
         }
+    }
+}
 
-        item {
-            Text("📋 كشاف وإدارة الأقسام المضافة حالياً:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+@Composable
+fun TabManageProvidersScreen(viewModel: AppViewModel, list: List<ServiceProvider>, categories: List<Category>) {
+    val approved = list.filter { !it.isPending }
+    val context = LocalContext.current
+    var editingProvider by remember { mutableStateOf<ServiceProvider?>(null) }
+
+    // Forms fields for edits
+    var editName by remember { mutableStateOf("") }
+    var editPhone by remember { mutableStateOf("") }
+    var editNeigh by remember { mutableStateOf("") }
+    var editAddr by remember { mutableStateOf("") }
+
+    if (approved.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("لا يوجد مهندسون أو مقدمو خدمات معتمدون حالياً.", color = Color.Gray)
         }
-
-        items(categoriesList) { cat ->
-            val pName = cat.parentId?.let { pId -> categoriesList.find { it.id == pId }?.nameAr }
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+    } else {
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(approved) { p ->
+                Card(modifier = Modifier.fillMaxWidth()) {
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Box(modifier = Modifier.size(36.dp), contentAlignment = Alignment.Center) {
-                            ProviderImage(imgStr = cat.imageBase64, modifier = Modifier.fillMaxSize())
+                        Box(modifier = Modifier.size(50.dp).clip(RoundedCornerShape(6.dp))) {
+                            ProviderImage(p.profileImageBase64, modifier = Modifier.fillMaxSize())
                         }
-                        Column {
-                            Text(cat.nameAr, fontWeight = FontWeight.Bold)
-                            Text(cat.nameEn, fontSize = 11.sp, color = Color.Gray)
-                            if (pName != null) {
-                                Text("قسم فرعي لـ: $pName 🌿", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                            } else {
-                                Text("رئيسي أساسي 👑", fontSize = 10.sp, color = Color.Gray)
-                            }
-                        }
-                    }
-
-                    Row {
-                        IconButton(
-                            onClick = {
-                                if (!viewModel.canCurrentAdminEditCategories()) {
-                                    Toast.makeText(context, "❌ عذراً! لا تملك صلاحية إضافة أو تعديل الأقسام.", Toast.LENGTH_LONG).show()
-                                } else {
-                                    editingCategory = cat
-                                    editNameAr = cat.nameAr
-                                    editNameEn = cat.nameEn
-                                    editImgBase64 = cat.imageBase64
-                                    editIsSub = cat.parentId != null
-                                    editParentId = cat.parentId
-                                }
-                            }
-                        ) {
-                            Text("✏️", fontSize = 18.sp)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(p.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text("📞 ${p.phoneNumber} | 📍 ${p.neighborhood}", fontSize = 11.sp, color = Color.Gray)
                         }
 
-                        IconButton(
-                            onClick = {
-                                if (!viewModel.canCurrentAdminEditCategories()) {
-                                    Toast.makeText(context, "❌ عذراً! لا تملك صلاحية حذف الأقسام.", Toast.LENGTH_LONG).show()
-                                } else {
-                                    viewModel.deleteCategory(cat)
-                                    Toast.makeText(context, "🗑️ تم حذف القسم بنجاح ومزامنة البيانات!", Toast.LENGTH_SHORT).show()
-                                }
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            // Edit Modal trigger
+                            IconButton(onClick = {
+                                editingProvider = p
+                                editName = p.name
+                                editPhone = p.phoneNumber
+                                editNeigh = p.neighborhood
+                                editAddr = p.workAddress
+                            }) {
+                                Text("✏️", fontSize = 16.sp)
                             }
-                        ) {
-                            Text("🗑️", fontSize = 18.sp)
+
+                            // Delete button guarded with privileges validator
+                            IconButton(
+                                onClick = {
+                                    if (viewModel.canCurrentAdminDeleteProviders()) {
+                                        viewModel.deleteProvider(p)
+                                        Toast.makeText(context, "🗑️ تم إزالة مقدم الخدمة فوراً بنجاح ومزامنة الدليل!", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "❌ عذراً! لا تملك صلاحيات لحذف وإلغاء مقدمي الخدمات.", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            ) {
+                                Text("🗑️", fontSize = 16.sp)
+                            }
                         }
                     }
                 }
@@ -413,77 +336,254 @@ fun TabCategories(viewModel: AppViewModel) {
         }
     }
 
-    if (editingCategory != null) {
-        val originalCat = editingCategory!!
+    // Popup Edit Provider Dialog Box
+    if (editingProvider != null) {
+        val activeTarget = editingProvider!!
         AlertDialog(
-            onDismissRequest = { editingCategory = null },
-            title = { Text("تعديل تفاصيل القسم 📂") },
+            onDismissRequest = { editingProvider = null },
+            title = { Text("✍️ تعديل ملف مقدم الخدمة الجغرافي") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = editNameAr,
-                        onValueChange = { editNameAr = it },
-                        label = { Text("الاسم بالعربية") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = editNameEn,
-                        onValueChange = { editNameEn = it },
-                        label = { Text("الاسم بالإنجليزية") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("النوع:")
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = !editIsSub, onClick = { editIsSub = false })
-                            Text("أساسي")
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = editIsSub, onClick = { editIsSub = true })
-                            Text("فرعي")
-                        }
-                    }
-
-                    if (editIsSub) {
-                        Box {
-                            val parName = categoriesList.find { it.id == editParentId }?.nameAr ?: "اختر الحاضن..."
-                            Button(onClick = { editParentDropdown = true }, modifier = Modifier.fillMaxWidth()) {
-                                Text("الرأس: $parName 🔽")
-                            }
-                            DropdownMenu(expanded = editParentDropdown, onDismissRequest = { editParentDropdown = false }) {
-                                categoriesList.filter { it.parentId == null && it.id != originalCat.id }.forEach { pCat ->
-                                    DropdownMenuItem(text = { Text(pCat.nameAr) }, onClick = {
-                                        editParentId = pCat.id
-                                        editParentDropdown = false
-                                    })
-                                }
-                            }
-                        }
-                    }
-
-                    // Selector
-                    Button(onClick = { editCategoryImageLauncher.launch("image/*") }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)) {
-                        Text("تغيير الصورة من المعرض 🖼️")
-                    }
+                    OutlinedTextField(value = editName, onValueChange = { editName = it }, label = { Text("اسم مقدم الخدمة") })
+                    OutlinedTextField(value = editPhone, onValueChange = { editPhone = it }, label = { Text("رقم الهاتف") })
+                    OutlinedTextField(value = editNeigh, onValueChange = { editNeigh = it }, label = { Text("الحي / المدينة") })
+                    OutlinedTextField(value = editAddr, onValueChange = { editAddr = it }, label = { Text("عنوان العمل") })
                 }
             },
             confirmButton = {
                 Button(onClick = {
-                    if (editNameAr.isNotBlank()) {
-                        val finalParentId = if (editIsSub) editParentId else null
-                        val updated = originalCat.copy(
-                            nameAr = editNameAr,
-                            nameEn = editNameEn,
-                            imageBase64 = editImgBase64,
-                            parentId = finalParentId
+                    if (editName.isNotBlank() && editPhone.isNotBlank()) {
+                        val updated = activeTarget.copy(
+                            name = editName,
+                            phoneNumber = editPhone,
+                            neighborhood = editNeigh,
+                            workAddress = editAddr
                         )
-                        viewModel.updateCategoryDirectFlow(updated)
-                        Toast.makeText(context, "✅ تم تعديل وحفظ القسم بنجاح!", Toast.LENGTH_SHORT).show()
-                        editingCategory = null
+                        viewModel.updateProvider(updated)
+                        editingProvider = null
                     }
                 }) {
-                    Text("تثبيت وحفظ")
+                    Text("حفظ التعديلات")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingProvider = null }) { Text("إلغاء") }
+            }
+        )
+    }
+}
+
+@Composable
+fun TabManageCategoriesScreen(viewModel: AppViewModel, list: List<Category>) {
+    val context = LocalContext.current
+    var catNameAr by remember { mutableStateOf("") }
+    var catEmoji by remember { mutableStateOf("⚡") }
+    var isSubCategory by remember { mutableStateOf(false) }
+    var selectedParentId by remember { mutableStateOf<Int?>(null) }
+    var isCatPinned by remember { mutableStateOf(false) }
+
+    var editingCategory by remember { mutableStateOf<Category?>(null) }
+    var editCatNameAr by remember { mutableStateOf("") }
+    var editCatEmoji by remember { mutableStateOf("") }
+    var editIsSubCategory by remember { mutableStateOf(false) }
+    var editSelectedParentId by remember { mutableStateOf<Int?>(null) }
+    var editIsCatPinned by remember { mutableStateOf(false) }
+
+    val mainCategories = list.filter { it.parentId == null }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("➕ إضافة قسم أو تخصص مهني جديد:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = catNameAr, onValueChange = { catNameAr = it }, label = { Text("الاسم باللغة العربية") }, modifier = Modifier.weight(1f))
+                OutlinedTextField(value = catEmoji, onValueChange = { catEmoji = it }, label = { Text("رمز/إيموجي") }, modifier = Modifier.weight(0.4f))
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = isSubCategory, onCheckedChange = { isSubCategory = it })
+                Text("هذا قسم فرعي (ليس تخصصاً أساسياً)", fontSize = 11.sp)
+            }
+
+            if (isSubCategory) {
+                Text("اختر القسم الأساسي الذي تتبع له هذه المهنة الفرعية:", fontSize = 10.sp, color = CharcoalGoldAccent)
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(mainCategories) { main ->
+                        FilterChip(
+                            selected = selectedParentId == main.id,
+                            onClick = { selectedParentId = main.id },
+                            label = { Text("${main.imageBase64} ${main.nameAr}") }
+                        )
+                    }
+                }
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = isCatPinned, onCheckedChange = { isCatPinned = it })
+                Text("📌 تثبيت هذا التخصص في المقدمة (يظهر أول الكشف للجمهور)", fontSize = 11.sp)
+            }
+
+            Button(
+                onClick = {
+                    if (viewModel.canCurrentAdminEditCategories()) {
+                        if (catNameAr.isNotBlank()) {
+                            val newCat = Category(
+                                nameAr = catNameAr,
+                                nameEn = "",
+                                imageBase64 = catEmoji,
+                                parentId = if (isSubCategory) selectedParentId else null,
+                                isPinned = isCatPinned
+                            )
+                            viewModel.addCategoryDirectFlow(newCat)
+                            catNameAr = ""
+                            catEmoji = "⚡"
+                            isSubCategory = false
+                            selectedParentId = null
+                            isCatPinned = false
+                        } else {
+                            Toast.makeText(context, "الرجاء كتابة اسم التخصص أولاً", Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        Toast.makeText(context, "❌ عذراً! لا تملك صلاحية إضافة أو تعديل الأقسام والخدمات.", Toast.LENGTH_LONG).show()
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("حفظ وإضافة التخصص للجمهور ✨")
+            }
+        }
+    }
+
+    Spacer(modifier = Modifier.height(10.dp))
+
+    Text("📂 الأقسام والتصنيفات الحالية للخدمات والمهن باليمن:", fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(vertical = 4.dp))
+
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxHeight(0.6f)
+    ) {
+        items(list) { cat ->
+            val isParent = cat.parentId == null
+            val parentName = if (!isParent) mainCategories.find { it.id == cat.parentId }?.nameAr else null
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (cat.isPinned) {
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                    }
+                )
+            ) {
+                Row(
+                    modifier = Modifier.padding(10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(cat.imageBase64, fontSize = 20.sp)
+                            Text(cat.nameAr, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            if (cat.isPinned) {
+                                Text("📌 مثبت", fontSize = 9.sp, color = CharcoalGoldPrimary)
+                            }
+                            if (isParent) {
+                                Text("🟢 رئيسي", fontSize = 9.sp, color = Color.Green)
+                            }
+                        }
+                        if (!isParent) {
+                            Text("↳ قسم فرعي من: ${parentName ?: "تخصص رئيسي"}", fontSize = 10.sp, color = Color.Gray)
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = {
+                                if (viewModel.canCurrentAdminEditCategories()) {
+                                    editingCategory = cat
+                                    editCatNameAr = cat.nameAr
+                                    editCatEmoji = cat.imageBase64
+                                    editIsSubCategory = cat.parentId != null
+                                    editSelectedParentId = cat.parentId
+                                    editIsCatPinned = cat.isPinned
+                                } else {
+                                    Toast.makeText(context, "❌ لا تملك صلاحية تعديل الأقسام.", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        ) {
+                            Text("✏️", fontSize = 16.sp)
+                        }
+                        IconButton(
+                            onClick = {
+                                if (viewModel.canCurrentAdminEditCategories()) {
+                                    viewModel.deleteCategory(cat)
+                                } else {
+                                    Toast.makeText(context, "❌ عذراً! لا تملك صلاحية حذف الأقسام.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        ) {
+                            Text("🗑️", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Modal dialogue overlay for editing category elements
+    if (editingCategory != null) {
+        val cat = editingCategory!!
+        AlertDialog(
+            onDismissRequest = { editingCategory = null },
+            title = { Text("✏️ تعديل تخصص: ${cat.nameAr}") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(value = editCatNameAr, onValueChange = { editCatNameAr = it }, label = { Text("الاسم") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = editCatEmoji, onValueChange = { editCatEmoji = it }, label = { Text("أيقونة") }, modifier = Modifier.fillMaxWidth())
+                    
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = editIsSubCategory, onCheckedChange = { editIsSubCategory = it })
+                        Text("هذا قسم فرعي", fontSize = 11.sp)
+                    }
+
+                    if (editIsSubCategory) {
+                        Text("القسم الأساسي التابع له:", fontSize = 10.sp)
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            items(mainCategories.filter { it.id != cat.id }) { main ->
+                                FilterChip(
+                                    selected = editSelectedParentId == main.id,
+                                    onClick = { editSelectedParentId = main.id },
+                                    label = { Text("${main.imageBase64} ${main.nameAr}") }
+                                )
+                            }
+                        }
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = editIsCatPinned, onCheckedChange = { editIsCatPinned = it })
+                        Text("📌 تثبيت هذا التخصص في المقدمة", fontSize = 11.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val updated = cat.copy(
+                            nameAr = editCatNameAr,
+                            imageBase64 = editCatEmoji,
+                            parentId = if (editIsSubCategory) editSelectedParentId else null,
+                            isPinned = editIsCatPinned
+                        )
+                        viewModel.updateCategoryDirectFlow(updated)
+                        editingCategory = null
+                    }
+                ) {
+                    Text("حفظ التعديلات")
                 }
             },
             dismissButton = {
@@ -495,782 +595,136 @@ fun TabCategories(viewModel: AppViewModel) {
     }
 }
 
-// --- TAB 2: PENDING REGISTRATIONS & MANAGEMENT ---
 @Composable
-fun TabProviders(viewModel: AppViewModel, settings: AppSettings) {
-    val pendingList by viewModel.pendingProviders.collectAsState()
-    val allProvidersList by viewModel.allProviders.collectAsState()
-    val categoriesList by viewModel.categories.collectAsState()
-
-    var showManualAddDialog by remember { mutableStateOf(false) }
-    var zoomImageState by remember { mutableStateOf<String?>(null) } // holds emoji for scaling view
-
-    var rejectIdState by remember { mutableStateOf<Int?>(null) }
-    var rejectReasonField by remember { mutableStateOf("") }
-
+fun TabManageBannersCampaigns(viewModel: AppViewModel, list: List<Banner>) {
     val context = LocalContext.current
+    var title by remember { mutableStateOf("") }
+    var imageBase64String by remember { mutableStateOf("") }
+    var durationSecs by remember { mutableStateOf("5") }
+    var sizeStr by remember { mutableStateOf("MEDIUM") } // SMALL, MEDIUM, LARGE
+    var typeStr by remember { mutableStateOf("IMAGE") } // IMAGE, VIDEO
+    var redirectLink by remember { mutableStateOf("") }
 
-    // Edit professional states
-    var editingProvider by remember { mutableStateOf<ServiceProvider?>(null) }
-    var editProviderName by remember { mutableStateOf("") }
-    var editProviderPhone by remember { mutableStateOf("") }
-    var editProviderNeighborhood by remember { mutableStateOf("") }
-    var editProviderAddress by remember { mutableStateOf("") }
-    var editProviderImg by remember { mutableStateOf("") }
-
-    val editProviderImageLauncher = rememberLauncherForActivityResult(
+    val imageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri != null) {
             try {
                 context.contentResolver.openInputStream(uri)?.use { stream ->
                     val bytes = stream.readBytes()
-                    val base64 = compressAndResizeImageAdmin(bytes)
-                    editProviderImg = "base64,$base64"
-                    Toast.makeText(context, "📸 تم اختيار وتعيين صورة الملف الشخصي الجديدة بعد الضغط التلقائي!", Toast.LENGTH_SHORT).show()
+                    val cmpBase64 = compressAndResizeImageAdmin(bytes)
+                    imageBase64String = cmpBase64
+                    Toast.makeText(context, "🖼️ تم تحميل وتصغير مظهر الإعلان بنجاح!", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
-                Toast.makeText(context, "❌ فشل قراءة الصورة: ${e.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "فشل قراءة الملف", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
     LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Button(
-                onClick = { showManualAddDialog = true },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("➕ إضافة مقدم خدمة مباشر يدوياً (بدون شروط) ⚡")
-            }
-        }
-
-        // Section 1: Pending providers requests review from pending_providers
-        item {
-            Text(
-                text = "⏳ طلبات التسجيل بانتظار الموافقة (${pendingList.size}):",
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp,
-                color = Color(0xFFFF9800)
-            )
-        }
-
-        if (pendingList.isEmpty()) {
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Box(modifier = Modifier.padding(16.dp), contentAlignment = Alignment.Center) {
-                        Text("لا يوجد طلبات انضمام بانتظار المراجعة.", color = Color.Gray, fontSize = 12.sp)
-                    }
-                }
-            }
-        } else {
-            items(pendingList) { pending ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(50.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primaryContainer)
-                                    .clickable { zoomImageState = pending.profileImageBase64 }, // click to scale profile image!
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(pending.profileImageBase64, fontSize = 28.sp)
-                            }
-
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(pending.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                Text("الهاتف: ${pending.phone}", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
-                                val serviceName = categoriesList.find { it.id == pending.mainCategoryId }?.nameAr ?: "تخصص"
-                                Text("التخصص: $serviceName", fontSize = 11.sp, color = Color.Gray)
-                            }
-                        }
-
-                        Text("العنوان والمحل: ${pending.neighborhood} - ${pending.address}", fontSize = 11.sp)
-
-                        // Uploaded ID document simulation clickable popup
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("بطاقة الهوية المقدمة:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(Color.DarkGray)
-                                    .clickable { zoomImageState = pending.idCardImageBase64 }, // click to scale id card image!
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(pending.idCardImageBase64, fontSize = 20.sp)
-                            }
-                            Text("(انقر على الصور لمعاينتها بتكبير كامل 🔍)", fontSize = 10.sp, color = Color.Gray)
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = { viewModel.approveProvider(pending.id) },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("قبول الطلب ✅", fontSize = 11.sp)
-                            }
-
-                            Button(
-                                onClick = { rejectIdState = pending.id },
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("رفض الطلب ❌", fontSize = 11.sp)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Section 2: Manage All Providers currently active with quick buttons
-        item {
-            Text(
-                text = "🛠️ إدارة الحسابات والترشيح والتثبيت لحسابات المهن:",
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-
-        val approvedList = allProvidersList.filter { it.isApproved }
-        if (approvedList.isEmpty()) {
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Box(modifier = Modifier.padding(16.dp), contentAlignment = Alignment.Center) {
-                        Text("لا يوجد حسابات مهنية مفعلة حالياً للتعديل.", color = Color.Gray, fontSize = 12.sp)
-                    }
-                }
-            }
-        } else {
-            items(approvedList) { p ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text(p.name, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                IconButton(
-                                    onClick = {
-                                        editingProvider = p
-                                        editProviderName = p.name
-                                        editProviderPhone = p.phone
-                                        editProviderNeighborhood = p.neighborhood
-                                        editProviderAddress = p.address
-                                        editProviderImg = p.profileImageBase64
-                                    },
-                                    modifier = Modifier.size(24.dp)
-                                ) {
-                                    Text("✏️", fontSize = 13.sp)
-                                }
-                            }
-                            
-                            // Yellow Recommended, Gold Pinned and Verified Blue Badges representation
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                if (p.isBlocked) {
-                                    Text("🚫 محظور", color = Color.Red, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                }
-                                if (p.isVerified) {
-                                    Text("✔️ شارة زرقاء", color = BlueVerified, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                }
-                                if (p.isPinned) {
-                                    Text("📌 مثبت", color = Color(0xFFFFD700), fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                }
-                                if (p.isRecommended) {
-                                    Text("⭐ موصى به", color = OrangeRecommended, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-
-                        // Management action buttons rows
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            // Pin toggle
-                            Button(
-                                onClick = { viewModel.togglePinProvider(p.id) },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (p.isPinned) Color(0xFFFFD700) else Color.DarkGray
-                                ),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                            ) {
-                                Text(if (p.isPinned) "إلغاء تثبيت" else "تثبيت 📌", fontSize = 10.sp, color = Color.Black)
-                            }
-
-                            // Recommend toggle
-                            Button(
-                                onClick = { viewModel.toggleRecommendProvider(p.id) },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (p.isRecommended) OrangeRecommended else Color.DarkGray
-                                ),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                            ) {
-                                Text(if (p.isRecommended) "إلغاء توصية" else "توصية ⭐", fontSize = 10.sp, color = Color.Black)
-                            }
-
-                            // Verify Badge toggle
-                            Button(
-                                onClick = { viewModel.toggleVerifyProvider(p.id) },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (p.isVerified) BlueVerified else Color.DarkGray
-                                ),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                            ) {
-                                Text(if (p.isVerified) "إلغاء توثيق" else "توثيق 🛡️", fontSize = 10.sp, color = Color.White)
-                            }
-
-                            // Monthly Subscription badge representation
-                            Button(
-                                onClick = { viewModel.toggleMonthlySubscription(p.id) },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (p.hasMonthlySubscription) Color(0xFFE65100) else Color.DarkGray
-                                ),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                            ) {
-                                Text(if (p.hasMonthlySubscription) "إلغاء الاشتراك" else "اشتراك شهري 💳", fontSize = 10.sp, color = Color.White)
-                            }
-
-                            // Block/Ban toggle
-                            Button(
-                                onClick = { viewModel.toggleBlockProvider(p.id) },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (p.isBlocked) Color.Red else Color.Gray
-                                ),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                            ) {
-                                Text(if (p.isBlocked) "إلغاء حظر" else "حظر 🚫", fontSize = 10.sp, color = Color.White)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Manual Instant Add Dialogue
-    if (showManualAddDialog) {
-        var manName by remember { mutableStateOf("") }
-        var manPhone by remember { mutableStateOf("") }
-        var manAddr by remember { mutableStateOf("") }
-        var manNeigh by remember { mutableStateOf("") }
-        var manCat by remember { mutableStateOf<Int?>(categoriesList.firstOrNull()?.id) }
-
-        AlertDialog(
-            onDismissRequest = { showManualAddDialog = false },
-            title = { Text("⚡ إضافة مقدم خدمة مباشر يدوياً") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(value = manName, onValueChange = { manName = it }, label = { Text("الاسم الكامل:") }, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = manPhone, onValueChange = { manPhone = it }, label = { Text("الهاتف:") }, modifier = Modifier.fillMaxWidth())
-                    
-                    // Categorized select list
-                    Text("اختر المهن التخصصي:")
-                    Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                        for (cat in categoriesList) {
-                            Box(
-                                modifier = Modifier
-                                    .padding(4.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(if (manCat == cat.id) MaterialTheme.colorScheme.primary else Color.DarkGray)
-                                    .clickable { manCat = cat.id }
-                                    .padding(6.dp)
-                            ) {
-                                Text(cat.nameAr, fontSize = 10.sp, color = Color.White)
-                            }
-                        }
-                    }
-
-                    OutlinedTextField(value = manAddr, onValueChange = { manAddr = it }, label = { Text("عنوان المحل:") }, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = manNeigh, onValueChange = { manNeigh = it }, label = { Text("منطقة السكن:") }, modifier = Modifier.fillMaxWidth())
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (manName.isNotBlank() && manPhone.isNotBlank() && manCat != null) {
-                            viewModel.addProviderDirectly(manName, manPhone, manCat!!, manAddr, manNeigh)
-                            showManualAddDialog = false
-                            Toast.makeText(context, "Direct additive completed successfully!", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                ) {
-                    Text("إضافة مباشرة")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showManualAddDialog = false }) { Text("إلغاء") }
-            }
-        )
-    }
-
-    // Popup Zoom Preview for Documentations/Identity Cards (100% stable)
-    if (zoomImageState != null) {
-        AlertDialog(
-            onDismissRequest = { zoomImageState = null },
-            title = { Text("🔎 معاينة كاملة ومكبرة للمستحضر") },
-            text = {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp)
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(zoomImageState!!, fontSize = 100.sp)
-                }
-            },
-            confirmButton = {
-                Button(onClick = { zoomImageState = null }) {
-                    Text("إغلاق المعاينة")
-                }
-            }
-        )
-    }
-
-    // Rejection Reason popup Dialog
-    if (rejectIdState != null) {
-        AlertDialog(
-            onDismissRequest = { rejectIdState = null },
-            title = { Text("❌ رفض طلب الانضمام") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("أدخل سبب رفض طلب الانضمام المناسب ليظهر لمقدم الطلب:")
-                    OutlinedTextField(
-                        value = rejectReasonField,
-                        onValueChange = { rejectReasonField = it },
-                        placeholder = { Text("مثال: صورة بطاقة الهوية المدخلة غير واضحة") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.rejectProvider(rejectIdState!!, rejectReasonField)
-                        Toast.makeText(context, "تم الرفض والرد بالسبب.", Toast.LENGTH_SHORT).show()
-                        rejectIdState = null
-                        rejectReasonField = ""
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
-                ) {
-                    Text("تأكيد الرفض")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { rejectIdState = null }) { Text("إلغاء") }
-            }
-        )
-    }
-
-    if (editingProvider != null) {
-        val originalProv = editingProvider!!
-        AlertDialog(
-            onDismissRequest = { editingProvider = null },
-            title = { Text("✏️ تعديل بيانات مقدم الخدمة المعتمد") },
-            text = {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.verticalScroll(rememberScrollState())
-                ) {
-                    OutlinedTextField(
-                        value = editProviderName,
-                        onValueChange = { editProviderName = it },
-                        label = { Text("الاسم الكامل:") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = editProviderPhone,
-                        onValueChange = { editProviderPhone = it },
-                        label = { Text("رقم الهاتف:") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = editProviderNeighborhood,
-                        onValueChange = { editProviderNeighborhood = it },
-                        label = { Text("السكن / الحي:") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = editProviderAddress,
-                        onValueChange = { editProviderAddress = it },
-                        label = { Text("عنوان العمل / تفاصيل المحل:") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Button(
-                            onClick = { editProviderImageLauncher.launch("image/*") },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("تغيير الصورة 🖼️", fontSize = 11.sp)
-                        }
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(CircleShape)
-                                .background(Color.DarkGray),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            ProviderImage(imgStr = editProviderImg, modifier = Modifier.fillMaxSize())
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    if (editProviderName.isNotBlank() && editProviderPhone.isNotBlank()) {
-                        val updated = originalProv.copy(
-                            name = editProviderName,
-                            phone = editProviderPhone,
-                            neighborhood = editProviderNeighborhood,
-                            address = editProviderAddress,
-                            profileImageBase64 = editProviderImg
-                        )
-                        viewModel.updateProviderDirect(updated)
-                        Toast.makeText(context, "✅ تم حفظ التعديلات بنجاح ومزامنتها!", Toast.LENGTH_SHORT).show()
-                        editingProvider = null
-                    }
-                }) {
-                    Text("حفظ التعديلات")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { editingProvider = null }) {
-                    Text("إلغاء")
-                }
-            }
-        )
-    }
-}
-
-// --- TAB 3: BANNER ADVERTISEMENTS MANAGER ---
-@Composable
-fun TabBanners(viewModel: AppViewModel) {
-    val bannersList by viewModel.banners.collectAsState()
-    var bannerContent by remember { mutableStateOf("") }
-    var sizeChoice by remember { mutableStateOf("MEDIUM") } // SMALL, MEDIUM, LARGE
-    var durationVal by remember { mutableStateOf(5) }
-    var targetUrlVal by remember { mutableStateOf("") }
-    val context = LocalContext.current
-
-    LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxSize()
-    ) {
-        item {
-            Card {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("➕ رفع وإنشاء لافتة إعلان (Banner) جديدة:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-
-                    OutlinedTextField(
-                        value = bannerContent,
-                        onValueChange = { bannerContent = it },
-                        label = { Text("محتوى أو تفاصيل نص الإعلان:") },
-                        placeholder = { Text("مثال: خصم 20% لكل المشتركات بمناسبة الصيف!") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    OutlinedTextField(
-                        value = targetUrlVal,
-                        onValueChange = { targetUrlVal = it },
-                        label = { Text("رابط التوجيه الذكي (اختياري):") },
-                        placeholder = { Text("مثال: https://wam.ye/event") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("حجم اللافتة:")
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf("SMALL", "MEDIUM", "LARGE").forEach { sz ->
-                                ElevatedFilterChip(
-                                    selected = sizeChoice == sz,
-                                    onClick = { sizeChoice = sz },
-                                    label = { Text(sz) }
-                                )
-                            }
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("مدة العرض بالثواني: $durationVal ثواني")
-                        Slider(
-                            value = durationVal.toFloat(),
-                            onValueChange = { durationVal = it.toInt() },
-                            valueRange = 3f..20f,
-                            modifier = Modifier.width(180.dp)
-                        )
-                    }
-
-                    Button(
-                        onClick = {
-                            if (bannerContent.isNotBlank()) {
-                                viewModel.addBanner("TEXT", bannerContent, durationVal, sizeChoice, targetUrlVal)
-                                bannerContent = ""
-                                targetUrlVal = ""
-                                Toast.makeText(context, "📢 تم نشر لافتة الإعلان بنجاح في أعلى الصفحة الرئيسية!", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("حفظ ونشر شريط الترويج 📢")
-                    }
-                }
-            }
-        }
-
-        item {
-            Text("📋 اللافتات النشطة حالياً:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-        }
-
-        items(bannersList) { b ->
             Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("حجم الإعلان: ${b.bannerSize}", fontWeight = FontWeight.Bold, color = Color(0xFFFFCC00))
-                        IconButton(onClick = { viewModel.deleteBanner(b) }) {
-                            Text("🗑️", fontSize = 18.sp)
-                        }
-                    }
-                    Text(b.content, fontWeight = FontWeight.Bold)
-                    Text("مدة العرض: ${b.durationSeconds} ثانية | الرابط: ${if (b.targetUrl.isBlank()) "لا يوجد" else b.targetUrl}", fontSize = 11.sp, color = Color.Gray)
-                }
-            }
-        }
-    }
-}
-
-// --- TAB 4: ADVANCED SETTINGS & CONFIGURATION ---
-@Composable
-fun TabSettings(viewModel: AppViewModel, settings: AppSettings) {
-    var appNameField by remember { mutableStateOf(settings.appName) }
-    var footerField by remember { mutableStateOf(settings.adFooterText) }
-    var isFooterHiddenField by remember { mutableStateOf(settings.isFooterHidden) }
-    var welcomeField by remember { mutableStateOf(settings.welcomeMessage) }
-    var phoneField by remember { mutableStateOf(settings.supportPhone) }
-    var emailField by remember { mutableStateOf(settings.supportEmail) }
-    var whatsappField by remember { mutableStateOf(settings.supportWhatsapp) }
-    var isMaintenanceField by remember { mutableStateOf(settings.isMaintenanceMode) }
-    var fcmEnabled by remember { mutableStateOf(settings.enableFCMNotifications) }
-
-    var selectedTheme by remember { mutableStateOf(settings.themeChoice) }
-    
-    // Whitelist and extra properties of owner
-    var whitelistField by remember { mutableStateOf(settings.permittedDevices) }
-    var secure2faField by remember { mutableStateOf(settings.is2faEnabled) }
-
-    val context = LocalContext.current
-
-    LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-        modifier = Modifier.fillMaxSize()
-    ) {
-        // Aesthetic color palette choice
-        item {
-            Card {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("🎨 تحديد هوية الألوان المرئية لجميع الهواتف:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    selectedTheme = "COSMIC_SILVER"
-                                    viewModel.updateAppColors("COSMIC_SILVER")
-                                }
-                                .padding(8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(selected = selectedTheme == "COSMIC_SILVER", onClick = {
-                                selectedTheme = "COSMIC_SILVER"
-                                viewModel.updateAppColors("COSMIC_SILVER")
-                            })
-                            Text("🌌 كوزميك سيلفر: فضي ميتاليك مع خلفية مريحة داكنة")
-                        }
+                    Text("📢 رفع حملة أو شريط لافتة إعلانية مميزة بالقمة:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
 
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    selectedTheme = "LUXURY_GOLD"
-                                    viewModel.updateAppColors("LUXURY_GOLD")
-                                }
-                                .padding(8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(selected = selectedTheme == "LUXURY_GOLD", onClick = {
-                                selectedTheme = "LUXURY_GOLD"
-                                viewModel.updateAppColors("LUXURY_GOLD")
-                            })
-                            Text("✨ الذهبي الفاخر: لون ذهبي براق مع خلفية عتمة فاخرة")
-                        }
+                    OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("عنوان الإعلان") }, modifier = Modifier.fillMaxWidth())
 
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    selectedTheme = "ELEGANT_EMERALD"
-                                    viewModel.updateAppColors("ELEGANT_EMERALD")
-                                }
-                                .padding(8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(selected = selectedTheme == "ELEGANT_EMERALD", onClick = {
-                                selectedTheme = "ELEGANT_EMERALD"
-                                viewModel.updateAppColors("ELEGANT_EMERALD")
-                            })
-                            Text("🟢 الزمردي الراقي: أخضر ملكي يعكس أصالة يمنية ملكية")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { imageLauncher.launch("image/*") }, modifier = Modifier.weight(1.2f)) {
+                            Text("تحميل مظهر اللافتة 🖼️")
+                        }
+                        OutlinedTextField(
+                            value = durationSecs,
+                            onValueChange = { durationSecs = it },
+                            label = { Text("مدة العرض (ثواني)") },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    if (imageBase64String.isNotBlank()) {
+                        Text("تم اختيار مظهر البانر بنجاح! حجم معقول ومضغوط.", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                    }
+
+                    OutlinedTextField(value = redirectLink, onValueChange = { redirectLink = it }, label = { Text("رابط التوجيه (اختياري)") }, modifier = Modifier.fillMaxWidth())
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("حجم ومساحة البانر:", fontSize = 12.sp)
+                        Row {
+                            RadioButton(selected = sizeStr == "SMALL", onClick = { sizeStr = "SMALL" })
+                            Text("صغير (S)", fontSize = 10.sp, modifier = Modifier.align(Alignment.CenterVertically))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            RadioButton(selected = sizeStr == "MEDIUM", onClick = { sizeStr = "MEDIUM" })
+                            Text("متوسط (M)", fontSize = 10.sp, modifier = Modifier.align(Alignment.CenterVertically))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            RadioButton(selected = sizeStr == "LARGE", onClick = { sizeStr = "LARGE" })
+                            Text("كبير (L)", fontSize = 10.sp, modifier = Modifier.align(Alignment.CenterVertically))
                         }
                     }
-                }
-            }
-        }
-
-        // Custom config form
-        item {
-            Card {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("⚙️ تعديل النصوص العناوين والروابط في الهواتف السابقة:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-
-                    OutlinedTextField(value = appNameField, onValueChange = { appNameField = it }, label = { Text("اسم التطبيق المترجم:") }, modifier = Modifier.fillMaxWidth())
-
-                    OutlinedTextField(
-                        value = footerField,
-                        onValueChange = { footerField = it },
-                        label = { Text("التذييل الدعائي الراعي (Footer):") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
 
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("إخفاء التذييل الإعلاني السفلي تماماً:")
-                        Switch(checked = isFooterHiddenField, onCheckedChange = { isFooterHiddenField = it })
-                    }
-
-                    OutlinedTextField(value = welcomeField, onValueChange = { welcomeField = it }, label = { Text("رسالة ترحيب زوار الدليل:") }, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = phoneField, onValueChange = { phoneField = it }, label = { Text("رقم الإدارة / الدعم الفني:") }, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = whatsappField, onValueChange = { whatsappField = it }, label = { Text("رقم واتساب الإدارة:") }, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = emailField, onValueChange = { emailField = it }, label = { Text("إيميل الدعم الفني المعتمد:") }, modifier = Modifier.fillMaxWidth())
-
-                    Divider()
-
-                    // Security & White list (only configurable directly by owner / admin)
-                    Text("🔬 إدارة أمن الأجهزة والصلاحيات الحصرية:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-
-                    OutlinedTextField(
-                        value = whitelistField,
-                        onValueChange = { whitelistField = it },
-                        label = { Text("الأجهزة المصرحة للدخول للوحة الإدارة (Device Whitelist):") },
-                        placeholder = { Text("مثال: Pixel_6,Emulator_Device") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("تفعيل التحقق بخطوتين (2FA) للمشرفين:")
-                        Switch(checked = secure2faField, onCheckedChange = { secure2faField = it })
-                    }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("تنزيل قنوات إشعارات FCM النشطة:")
-                        Switch(checked = fcmEnabled, onCheckedChange = { fcmEnabled = it })
-                    }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("تحويل التطبيق لوضع الصيانة (Maintenance Mode):")
-                        Switch(checked = isMaintenanceField, onCheckedChange = { isMaintenanceField = it })
+                        Text("طبيعة المحتوى:", fontSize = 12.sp)
+                        Row {
+                            RadioButton(selected = typeStr == "IMAGE", onClick = { typeStr = "IMAGE" })
+                            Text("صورة", fontSize = 11.sp, modifier = Modifier.align(Alignment.CenterVertically))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            RadioButton(selected = typeStr == "VIDEO", onClick = { typeStr = "VIDEO" })
+                            Text("فيديو ترويجي", fontSize = 11.sp, modifier = Modifier.align(Alignment.CenterVertically))
+                        }
                     }
 
                     Button(
                         onClick = {
-                            viewModel.updateGeneralSettings(
-                                name = appNameField,
-                                footerText = footerField,
-                                footerHidden = isFooterHiddenField,
-                                welcome = welcomeField,
-                                phone = phoneField,
-                                email = emailField,
-                                whatsapp = whatsappField,
-                                maintenance = isMaintenanceField,
-                                fcm = fcmEnabled,
-                                assistantHidden = settings.isAssistantHidden,
-                                whitelist = whitelistField,
-                                sec2fa = secure2faField,
-                                topBar = settings.topAppBarConfigItems,
-                                fontStyle = settings.fontStyle,
-                                fontColor = settings.fontColor,
-                                assistantSize = settings.assistantSize,
-                                assistantX = settings.assistantPositionX,
-                                assistantY = settings.assistantPositionY,
-                                assistantIconChar = settings.assistantIcon
-                            )
-                            Toast.makeText(context, "💾 تم تشخيص وحفظ التغييرات الكلية بنجاح!", Toast.LENGTH_SHORT).show()
+                            if (title.isNotBlank()) {
+                                viewModel.addBanner(
+                                    title = title,
+                                    content = if (typeStr == "VIDEO") "" else imageBase64String,
+                                    duration = durationSecs.toIntOrNull() ?: 5,
+                                    redirectUrl = redirectLink,
+                                    size = sizeStr,
+                                    type = typeStr
+                                )
+                                title = ""
+                                imageBase64String = ""
+                                redirectLink = ""
+                            }
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("تطبيق وحفظ الإعدادات العامة بقوة 🔒")
+                        Text("مزامنة ونشر اللافتة الإعلانية فوراً 🚀")
+                    }
+                }
+            }
+        }
+
+        item {
+            Text("🗂️ اللافتات والحملات الإعلانية النشطة حالياً بالفئات:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        }
+
+        items(list) { b ->
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.padding(10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(b.title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("النوع: ${b.type} | المساحة: ${b.size} | الوقت: ${b.durationSeconds} ثواني", fontSize = 11.sp, color = Color.Gray)
+                    }
+                    IconButton(onClick = { viewModel.deleteBanner(b) }) {
+                        Text("🗑️", color = MaterialTheme.colorScheme.error)
                     }
                 }
             }
@@ -1278,69 +732,28 @@ fun TabSettings(viewModel: AppViewModel, settings: AppSettings) {
     }
 }
 
-// --- TAB 5: COMPLAINTS / REPORTS LOGS ---
 @Composable
-fun TabComplaints(viewModel: AppViewModel) {
-    val complaintsList by viewModel.complaints.collectAsState()
-    val context = LocalContext.current
-
-    LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxSize()
-    ) {
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("⚠️ قائمة البلاغات المقدمة من المستهلكين:", fontWeight = FontWeight.Bold)
-                
-                // Export Buttons
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(
-                        onClick = { Toast.makeText(context, "📄 تم توليد وتصدير ملف PDF بالبلاغات في مجلد التنزيلات!", Toast.LENGTH_LONG).show() },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828)),
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Text("تصدير PDF 📄", fontSize = 10.sp)
-                    }
-
-                    Button(
-                        onClick = { Toast.makeText(context, "📊 تم توليد وتصدير ملف CSV في مجلد الهاتف الرئيسي!", Toast.LENGTH_LONG).show() },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Text("تصدير CSV 📊", fontSize = 10.sp)
-                    }
-                }
-            }
+fun TabComplaintsMonitor(viewModel: AppViewModel, complaints: List<Complaint>) {
+    if (complaints.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("✅ لا توجد شكاوى أو بلاغات مسجلة ضد شركاء الدليل.", color = Color.Gray)
         }
-
-        if (complaintsList.isEmpty()) {
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Box(modifier = Modifier.padding(16.dp), contentAlignment = Alignment.Center) {
-                        Text("لا يوجد بلاغات معلقة للمراجعة والحمدلله ❤️", color = Color.Gray)
-                    }
-                }
-            }
-        } else {
-            items(complaintsList) { cmp ->
+    } else {
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(complaints) { c ->
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("ضد لاه المهني: ${cmp.providerName}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                            IconButton(onClick = { viewModel.deleteComplaint(cmp) }) {
-                                Text("🗑️", fontSize = 16.sp)
+                            Text("👤 الشاكي: ${c.userPhone.ifBlank { "مجهول" }}", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
+                            IconButton(onClick = { viewModel.deleteComplaint(c) }) {
+                                Text("🗑️ إغلاق البلاغ")
                             }
                         }
-                        Text("من صاحب البلاغ: ${cmp.userPhone}", fontSize = 11.sp, color = Color.Gray)
-                        Text(cmp.complaintText, fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                        Text("🛠️ ضد المهني: ${c.providerName} (رقم # ${c.providerId})", fontSize = 12.sp)
+                        Text("📜 تفاصيل المخالفة: ${c.details}", fontSize = 12.sp, color = Color.LightGray)
                     }
                 }
             }
@@ -1348,596 +761,684 @@ fun TabComplaints(viewModel: AppViewModel) {
     }
 }
 
-// --- TAB 6: GRAPHS & STATISTICS DASHBOARD (RECHARTS SIMULATION) ---
 @Composable
-fun TabStatistics(viewModel: AppViewModel) {
-    val allProvs by viewModel.allProviders.collectAsState()
-    val pendingList by viewModel.pendingProviders.collectAsState()
-    val categoriesList by viewModel.categories.collectAsState()
-
-    val totalCount = allProvs.filter { it.isApproved }.size
-    val blockedCount = allProvs.filter { it.isBlocked }.size
-    val goldCount = allProvs.filter { it.hasMonthlySubscription }.size
+fun TabModeratorsManagement(viewModel: AppViewModel, moderators: List<Moderator>) {
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var isNewModCanEditCats by remember { mutableStateOf(true) }
+    var isNewModCanDelProvs by remember { mutableStateOf(true) }
 
     LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        item {
-            Text("📊 الإحصائيات الفورية ومستوى الإقبال باللوحة الرسمية:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-        }
-
-        // Dashboard numbers widgets
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Card(modifier = Modifier.weight(1f)) {
-                    Column(
-                        modifier = Modifier.padding(10.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text("الكوادر المفعلة", fontSize = 11.sp, color = Color.Gray)
-                        Text("$totalCount", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = MaterialTheme.colorScheme.primary)
-                    }
-                }
-
-                Card(modifier = Modifier.weight(1f)) {
-                    Column(
-                        modifier = Modifier.padding(10.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text("طلبات الانتظار", fontSize = 11.sp, color = Color.Gray)
-                        Text("${pendingList.size}", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFFFF9800))
-                    }
-                }
-
-                Card(modifier = Modifier.weight(1f)) {
-                    Column(
-                        modifier = Modifier.padding(10.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text("أعضاء التميز", fontSize = 11.sp, color = Color.Gray)
-                        Text("$goldCount", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFFFFD700))
-                    }
-                }
-            }
-        }
-
-        // Material Visual bar chart representation showing category usage
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("🛡️ إضافة مشرف فرعي وتحديد صلاحياته اللحظية:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    OutlinedTextField(value = username, onValueChange = { username = it }, label = { Text("اسم المستخدم المشرف") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("كلمة المرور") }, modifier = Modifier.fillMaxWidth())
+
+                    // Real-time precise switches for permissions toggles
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("🎯 مستوى الكثافة الحالية للأقسام", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        Text("العدد الإجمالي: ${allProvs.size}", fontSize = 10.sp, color = Color.Gray)
+                        Text("صلاحية تعديل وإضافة الأقسام والخدمات:", fontSize = 12.sp)
+                        Switch(checked = isNewModCanEditCats, onCheckedChange = { isNewModCanEditCats = it })
                     }
 
-                    Divider(color = GrayBorder)
-
-                    // Draw 4 custom horizontal graphical percentage bars
-                    val listBars = listOf(
-                        "الكهرباء والشبكات" to 0.7f,
-                        "صيانة الأجهزة" to 0.45f,
-                        "خياطة وتطريز" to 0.35f,
-                        "الأسر المنتجة" to 0.85f
-                    )
-
-                    for (bar in listBars) {
-                        Column {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(bar.first, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                Text("${(bar.second * 100).toInt()}% تفاعل", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            // Simple responsive custom progress bar
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(8.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(Color.DarkGray)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth(bar.second)
-                                        .fillMaxHeight()
-                                        .background(MaterialTheme.colorScheme.primary)
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                        }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("صلاحية حذف مقدمي الخدمات في الدليل اليمن:", fontSize = 12.sp)
+                        Switch(checked = isNewModCanDelProvs, onCheckedChange = { isNewModCanDelProvs = it })
                     }
-                }
-            }
-        }
-    }
-}
-
-// --- TAB 7: BACKUP & AUTOMATED DAILY SCHEDULER ---
-@Composable
-fun TabBackup(viewModel: AppViewModel) {
-    val clipboard = LocalClipboardManager.current
-    val context = LocalContext.current
-    var inputBackupText by remember { mutableStateOf("") }
-    
-    // Auto schedule daily state
-    var autoScheduleBackupEnabled by remember { mutableStateOf(false) }
-
-    // Obsolete cleanup filters
-    var autoCleanupEnabled by remember { mutableStateOf(false) }
-    var cleanupIntervalDays by remember { mutableStateOf(30) } // 7 , 30 days
-
-    // SAF File Pickers for real external SD card/Google Drive/Internal storage backups!
-    val saveBackupLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("text/plain")
-    ) { uri ->
-        if (uri != null) {
-            try {
-                // Ensure backup text is populated
-                if (viewModel.backupStringState.isBlank()) {
-                    viewModel.backupDatabaseState()
-                }
-                context.contentResolver.openOutputStream(uri)?.use { out ->
-                    out.write(viewModel.backupStringState.toByteArray(Charsets.UTF_8))
-                }
-                Toast.makeText(context, "✅ تم حفظ ملف النسخة الاحتياطية بنجاح على جهازك/درايف!", Toast.LENGTH_LONG).show()
-                viewModel.triggerAdminNotification("💾 تم تصدير ملف النسخة الاحتياطية بنجاح!")
-            } catch (e: Exception) {
-                Toast.makeText(context, "❌ فشل حفظ الملف: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    val loadBackupLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            try {
-                context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                    val content = inputStream.bufferedReader().use { it.readText() }
-                    val ok = viewModel.restoreDatabaseState(content)
-                    if (ok) {
-                        Toast.makeText(context, "✅ تم بنجاح استرداد واستعادة النسخة بنجاح!", Toast.LENGTH_LONG).show()
-                        viewModel.triggerAdminNotification("⏳ تم تطبيق واسترجاع بيانات النسخة بالكامل!")
-                    } else {
-                        Toast.makeText(context, "❌ صيغة الملف غير معتمدة أو تالفة!", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            } catch (e: Exception) {
-                Toast.makeText(context, "❌ فشل قراءة الملف: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-        modifier = Modifier.fillMaxSize()
-    ) {
-        item {
-            Card {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("💿 إدارة النسخ الاحتياطي (بطاقة الذاكرة / جوجل درايف):", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Text("يمكنك تصدير كود النسخ الاحتياطي وحفظه كملف نصي آمن مباشرة في ذاكرة الهاتف، بطاقة الذاكرة الخارجية SD، أو جوجل درايف السحابي.", fontSize = 11.sp, color = Color.Gray)
 
                     Button(
                         onClick = {
-                            viewModel.backupDatabaseState()
-                            Toast.makeText(context, "💾 تم إنشاء نسختك الاحتياطية بنجاح!", Toast.LENGTH_SHORT).show()
+                            if (username.isNotBlank() && password.isNotBlank()) {
+                                viewModel.addModerator(
+                                    username = username.trim(),
+                                    passwordHex = password.trim(),
+                                    permissions = "CUSTOM",
+                                    canEditCategories = isNewModCanEditCats,
+                                    canDeleteProviders = isNewModCanDelProvs
+                                )
+                                username = ""
+                                password = ""
+                                isNewModCanEditCats = true
+                                isNewModCanDelProvs = true
+                            }
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("إنتاج نسخة احتياطية جديدة 💾")
+                        Text("إنشاء حساب المشرف ومزامنته 🔐")
+                    }
+                }
+            }
+        }
+
+        item {
+            Text("🗂️ المشرفون المسجلون حالياً بالمنصة:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        }
+
+        items(moderators) { m ->
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("👤 المشرف: ${m.username}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text("كلمة المرور: ${m.passwordHex}", fontSize = 11.sp, color = Color.Gray)
+                        }
+                        IconButton(
+                            onClick = {
+                                if (m.username == "WAM2026") {
+                                    // Protect super admin
+                                } else {
+                                    viewModel.deleteModerator(m)
+                                }
+                            },
+                            enabled = m.username != "WAM2026"
+                        ) {
+                            Text("🗑️", color = if (m.username == "WAM2026") Color.Gray else MaterialTheme.colorScheme.error)
+                        }
+                    }
+
+                    Divider(color = Color.LightGray.copy(alpha = 0.3f))
+
+                    // Real-time direct privileges toggle control switches directly inside the list item
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("تعديل الأقسام:", fontSize = 11.sp)
+                        Checkbox(
+                            checked = m.canEditCategories,
+                            onCheckedChange = {
+                                viewModel.updateModerator(m.copy(canEditCategories = it))
+                            }
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text("حذف المهنيين:", fontSize = 11.sp)
+                        Checkbox(
+                            checked = m.canDeleteProviders,
+                            onCheckedChange = {
+                                viewModel.updateModerator(m.copy(canDeleteProviders = it))
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun TabThemeIconConfiguration(viewModel: AppViewModel, settings: AppSettings, context: Context) {
+    var selectedTheme by remember { mutableStateOf(settings.activeTheme) }
+    var selectedFontColor by remember { mutableStateOf(settings.fontColor) }
+    
+    // Icon configurations
+    var customAiIconBase64String by remember { mutableStateOf(settings.customAiIconBase64) }
+    var selectedAiEffect by remember { mutableStateOf(settings.customAiIconEffect) }
+    var customChatIconBase64String by remember { mutableStateOf(settings.customChatIconBase64) }
+    var selectedChatEffect by remember { mutableStateOf(settings.customChatIconEffect) }
+    var customAboutIconBase64String by remember { mutableStateOf(settings.customAboutIconBase64) }
+    var selectedAboutEffect by remember { mutableStateOf(settings.customAboutIconEffect) }
+
+    // Floating Icon Sizes (as Percentages: 30f to 150f)
+    var aiIconSz by remember { mutableStateOf(settings.aiIconSize.toString()) }
+    var chatIconSz by remember { mutableStateOf(settings.chatIconSize.toString()) }
+    var aboutIconSz by remember { mutableStateOf(settings.aboutIconSize.toString()) }
+
+    // Hiding/Deleting switches
+    var isAiIconHidden by remember { mutableStateOf(settings.isAiIconHidden) }
+    var isChatIconHidden by remember { mutableStateOf(settings.isChatIconHidden) }
+    var isAboutIconHidden by remember { mutableStateOf(settings.isAboutIconHidden) }
+
+    // Floating sequence ordering: e.g. "AI,CHAT,ABOUT"
+    var iconOrderStr by remember { mutableStateOf(settings.iconOrder) }
+
+    // About App dynamic contents
+    var aboutTitleStr by remember { mutableStateOf(settings.aboutTitle) }
+    var aboutSubtitleStr by remember { mutableStateOf(settings.aboutSubtitle) }
+    var aboutDetailsStr by remember { mutableStateOf(settings.aboutDetails) }
+    var aboutImageBase64String by remember { mutableStateOf(settings.aboutImageBase64) }
+    var isAboutTextDeletedOption by remember { mutableStateOf(settings.isAboutContentTextDeleted) }
+    var isAboutImageReplacesContentOption by remember { mutableStateOf(settings.isAboutImageReplacesContent) }
+
+    var appIconSz by remember { mutableStateOf(settings.appIconSize.toString()) }
+    var footerImageBase64 by remember { mutableStateOf(settings.footerBackgroundImageBase64) }
+
+    val aiIconLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    val bytes = stream.readBytes()
+                    customAiIconBase64String = compressAndResizeImageAdmin(bytes)
+                    Toast.makeText(context, "🤖 تم تعيين صورة المساعد الذكي المخصصة بنجاح!", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "فشل تحديد الملف", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val chatIconLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    val bytes = stream.readBytes()
+                    customChatIconBase64String = compressAndResizeImageAdmin(bytes)
+                    Toast.makeText(context, "💬 تم تعيين صورة أيقونة الدردشة الفورية المخصصة!", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "فشل تعيين الصورة", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val aboutIconLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    val bytes = stream.readBytes()
+                    customAboutIconBase64String = compressAndResizeImageAdmin(bytes)
+                    Toast.makeText(context, "ℹ️ تم تحميل وتعيين أيقونة حول التطبيق المخصصة!", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "فشل تحديد الملف", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val aboutPageCardImageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    val bytes = stream.readBytes()
+                    aboutImageBase64String = compressAndResizeImageAdmin(bytes)
+                    Toast.makeText(context, "🖼️ تم رفع وتعيين صورة تعبيرية لصفحة حول التطبيق!", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "فشل تحديد صورة حول التطبيق", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val footerBgLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    val bytes = stream.readBytes()
+                    footerImageBase64 = compressAndResizeImageAdmin(bytes)
+                    Toast.makeText(context, "🖼️ تم تغيير خلفية تذييل التطبيق من الاستوديو بنجاح!", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "فشل تعيين خلفية التذييل", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        // Theme Colors
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("🌌 تحديد طابع وألوان ومظهر التطبيق العام والمزامنة اللحظية:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Button(
+                            onClick = { selectedTheme = "COSMIC_SLATE" },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (selectedTheme == "COSMIC_SLATE") CosmicSlatePrimary else Color.DarkGray)
+                        ) {
+                            Text("كوزميك سيلفر 🌌", fontSize = 11.sp, color = Color.Black)
+                        }
+
+                        Button(
+                            onClick = { selectedTheme = "CHARCOAL_GOLD" },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (selectedTheme == "CHARCOAL_GOLD") CharcoalGoldPrimary else Color.DarkGray)
+                        ) {
+                            Text("الذهبي الفاخر ✨", fontSize = 11.sp, color = Color.Black)
+                        }
+
+                        Button(
+                            onClick = { selectedTheme = "ROYAL_EMERALD" },
+                            modifier = Modifier.weight(1.3f),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (selectedTheme == "ROYAL_EMERALD") RoyalEmeraldPrimary else Color.DarkGray)
+                        ) {
+                            Text("الزمردي الراقي 🟢", fontSize = 11.sp, color = Color.Black)
+                        }
+                    }
+
+                    Text("🖋️ تحديد لون خطوط التطبيق والكتابة في الحقول والمدخلات:", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Button(
+                            onClick = { selectedFontColor = "BRIGHT_WHITE" },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (selectedFontColor == "BRIGHT_WHITE") Color.White else Color.DarkGray)
+                        ) {
+                            Text("الأبيض الناصع ◽", fontSize = 10.sp, color = Color.Black)
+                        }
+
+                        Button(
+                            onClick = { selectedFontColor = "LIGHT_GOLD" },
+                            modifier = Modifier.weight(1.1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (selectedFontColor == "LIGHT_GOLD") LightGoldColor else Color.DarkGray)
+                        ) {
+                            Text("الذهبي الفاتح 🟡", fontSize = 10.sp, color = Color.Black)
+                        }
+
+                        Button(
+                            onClick = { selectedFontColor = "VIBRANT_SILVER" },
+                            modifier = Modifier.weight(1.1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (selectedFontColor == "VIBRANT_SILVER") VibrantSilverColor else Color.DarkGray)
+                        ) {
+                            Text("الفضي المتوهج ◽", fontSize = 10.sp, color = Color.Black)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Floating Icons Order, Sizes and Hide/Delete properties (AI, CHAT, ABOUT)
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("⚙️ تخصيص الأزرار والأيقونات العائمة المعلقة للجمهور:", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = CharcoalGoldPrimary)
+
+                    OutlinedTextField(
+                        value = iconOrderStr,
+                        onValueChange = { iconOrderStr = it },
+                        label = { Text("ترتيب ظهور الأيقونات (مفصولة بفاصلة)") },
+                        placeholder = { Text("مثال: AI,CHAT,ABOUT") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text("ملاحظة: يمكنك إخفاء أيقونة بحذف كلمتها تماماً من السلسلة أعلاه مثل: 'AI,CHAT' لإلغاء أيقونة حول التطبيق.", fontSize = 9.sp, color = Color.LightGray)
+
+                    // Resizes Form Controls
+                    Text("📐 التحكم الفردي بالحجم والمقاس (النسبة المئوية 30 إلى 120):", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedTextField(value = aiIconSz, onValueChange = { aiIconSz = it }, label = { Text("حجم المساعد (AI)") }, modifier = Modifier.weight(1f))
+                        OutlinedTextField(value = chatIconSz, onValueChange = { chatIconSz = it }, label = { Text("حجم الدردشة (CHAT)") }, modifier = Modifier.weight(1f))
+                        OutlinedTextField(value = aboutIconSz, onValueChange = { aboutIconSz = it }, label = { Text("حجم حول (ABOUT)") }, modifier = Modifier.weight(1.1f))
+                    }
+
+                    // Visibility toggles
+                    Text("👁️ التحكم بالظهور المباشر والإخفاء الكلي:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = isAiIconHidden, onCheckedChange = { isAiIconHidden = it })
+                            Text("إخفاء أيقونة مساعد الذكاء الاصطناعي كلياً", fontSize = 11.sp)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = isChatIconHidden, onCheckedChange = { isChatIconHidden = it })
+                            Text("إخفاء أيقونة المحادثة الفورية المعلقة", fontSize = 11.sp)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = isAboutIconHidden, onCheckedChange = { isAboutIconHidden = it })
+                            Text("إخفاء أيقونة حول التطبيق وتفاصيله العائمة", fontSize = 11.sp)
+                        }
+                    }
+
+                    // Upload Base64 custom icon design buttons
+                    Text("🛡️ تخصيص وتعيين صور الأيقونات من الاستوديو:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Button(onClick = { aiIconLauncher.launch("image/*") }, modifier = Modifier.weight(1f)) {
+                            Text("صورة الذكاء", fontSize = 10.sp)
+                        }
+                        Button(onClick = { chatIconLauncher.launch("image/*") }, modifier = Modifier.weight(1f)) {
+                            Text("صورة الشات", fontSize = 10.sp)
+                        }
+                        Button(onClick = { aboutIconLauncher.launch("image/*") }, modifier = Modifier.weight(1f)) {
+                            Text("صورة حول", fontSize = 10.sp)
+                        }
+                    }
+
+                    // Effects Configurations
+                    Text("✨ تحديد تأثير الحركة والتوهج لكل أيقونة:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("تأثير المساعد (AI):", fontSize = 10.sp)
+                            Row {
+                                FilterChip(selected = selectedAiEffect == "NONE", onClick = { selectedAiEffect = "NONE" }, label = { Text("عادي") })
+                                Spacer(modifier = Modifier.width(4.dp))
+                                FilterChip(selected = selectedAiEffect == "GLOW", onClick = { selectedAiEffect = "GLOW" }, label = { Text("توهج") })
+                                Spacer(modifier = Modifier.width(4.dp))
+                                FilterChip(selected = selectedAiEffect == "ROTATE", onClick = { selectedAiEffect = "ROTATE" }, label = { Text("دوران") })
+                            }
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("تأثير الشات (CHAT):", fontSize = 10.sp)
+                            Row {
+                                FilterChip(selected = selectedChatEffect == "NONE", onClick = { selectedChatEffect = "NONE" }, label = { Text("عادي") })
+                                Spacer(modifier = Modifier.width(4.dp))
+                                FilterChip(selected = selectedChatEffect == "GLOW", onClick = { selectedChatEffect = "GLOW" }, label = { Text("توهج") })
+                                Spacer(modifier = Modifier.width(4.dp))
+                                FilterChip(selected = selectedChatEffect == "ROTATE", onClick = { selectedChatEffect = "ROTATE" }, label = { Text("دوران") })
+                            }
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("تأثير حول (ABOUT):", fontSize = 10.sp)
+                            Row {
+                                FilterChip(selected = selectedAboutEffect == "NONE", onClick = { selectedAboutEffect = "NONE" }, label = { Text("عادي") })
+                                Spacer(modifier = Modifier.width(4.dp))
+                                FilterChip(selected = selectedAboutEffect == "GLOW", onClick = { selectedAboutEffect = "GLOW" }, label = { Text("توهج") })
+                                Spacer(modifier = Modifier.width(4.dp))
+                                FilterChip(selected = selectedAboutEffect == "ROTATE", onClick = { selectedAboutEffect = "ROTATE" }, label = { Text("دوران") })
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Custom about app page content and image replacement configurations
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("ℹ️ تخصيص وتعديل معلومات صفحة 'حول التطبيق':", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = CharcoalGoldPrimary)
+
+                    OutlinedTextField(
+                        value = aboutTitleStr,
+                        onValueChange = { aboutTitleStr = it },
+                        label = { Text("العنوان الرئيسي لصفحة حول التطبيق") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = aboutSubtitleStr,
+                        onValueChange = { aboutSubtitleStr = it },
+                        label = { Text("العنوان الفرعي أو رقم الإصدار") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = aboutDetailsStr,
+                        onValueChange = { aboutDetailsStr = it },
+                        label = { Text("تفاصيل ومعلومات الاستخدام والاتصال باليمن") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3
+                    )
+
+                    Text("🖼️ تعيين صورة تعبيرية/شعار لصفحة حول التطبيق:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(onClick = { aboutPageCardImageLauncher.launch("image/*") }) {
+                            Text("اختر الصورة من هاتفك 🖼️")
+                        }
+                        if (aboutImageBase64String.isNotBlank()) {
+                            Text("صورة مخصصة نشطة 🟢", fontSize = 10.sp, color = Color.Green)
+                        }
+                    }
+
+                    Text("⚙️ دمج وتحكم كامل بالبيانات الورقية أو عرض الصور:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = isAboutTextDeletedOption, onCheckedChange = { isAboutTextDeletedOption = it })
+                            Text("حذف/إلغاء المربعات النصية التفصيلية لصفحة حول كلياً", fontSize = 11.sp)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = isAboutImageReplacesContentOption, onCheckedChange = { isAboutImageReplacesContentOption = it })
+                            Text("استبدال الصفحة كاملة بالصورة المرفوعة فقط", fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Footer background change from gallery
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("🎨 مظهر تذييل شريط التطبيق وتخصيصه:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Button(onClick = { footerBgLauncher.launch("image/*") }, modifier = Modifier.fillMaxWidth()) {
+                        Text("رفع وتغيير صورة خلفية التذييل من الاستوديو 🖼️")
+                    }
+                    if (footerImageBase64.isNotBlank()) {
+                        Text("تم تعيين صورة تذييل مخصصة وسيتم تفعيلها فوراً بالحزمة!", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+        }
+
+        // Save Button with direct mapping sync
+        item {
+            Button(
+                onClick = {
+                    viewModel.saveAppSettingsDirect(
+                        settings.copy(
+                            activeTheme = selectedTheme,
+                            fontColor = selectedFontColor,
+                            customAiIconBase64 = customAiIconBase64String,
+                            customAiIconEffect = selectedAiEffect,
+                            customChatIconBase64 = customChatIconBase64String,
+                            customChatIconEffect = selectedChatEffect,
+                            customAboutIconBase64 = customAboutIconBase64String,
+                            customAboutIconEffect = selectedAboutEffect,
+                            aiIconSize = aiIconSz.toFloatOrNull() ?: settings.aiIconSize,
+                            chatIconSize = chatIconSz.toFloatOrNull() ?: settings.chatIconSize,
+                            aboutIconSize = aboutIconSz.toFloatOrNull() ?: settings.aboutIconSize,
+                            isAiIconHidden = isAiIconHidden,
+                            isChatIconHidden = isChatIconHidden,
+                            isAboutIconHidden = isAboutIconHidden,
+                            iconOrder = iconOrderStr,
+                            aboutTitle = aboutTitleStr,
+                            aboutSubtitle = aboutSubtitleStr,
+                            aboutDetails = aboutDetailsStr,
+                            aboutImageBase64 = aboutImageBase64String,
+                            isAboutContentTextDeleted = isAboutTextDeletedOption,
+                            isAboutImageReplacesContent = isAboutImageReplacesContentOption,
+                            footerBackgroundImageBase64 = footerImageBase64
+                        )
+                    )
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("تطبيق وحفظ إعدادات المظهر الفوري 🎨✨")
+            }
+        }
+    }
+}
+
+@Composable
+fun TabDatabasePrivacyBackups(viewModel: AppViewModel, settings: AppSettings, context: Context) {
+    var globalChatToggle by remember { mutableStateOf(settings.isChatEnabledGlobal) }
+    var disabledMsg by remember { mutableStateOf(settings.chatDisabledMessage) }
+    var disabledListStr by remember { mutableStateOf(settings.disabledChatProviderIds) }
+    
+    // Live update app version URL for DownloadManager
+    var appUrlStr by remember { mutableStateOf(settings.latestVersionUrl) }
+    var appVerCode by remember { mutableStateOf(settings.latestVersionCode.toString()) }
+
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+    val coroutineScope = rememberCoroutineScope()
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        // Live Chat activation / deactivation management for all or specific providers
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("💬 التحكم بميزة المحادثة الفورية والتعطيل اللحظي للتواصل:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("ميزة المحادثة الفورية نشطة عامة:", fontSize = 12.sp)
+                        Switch(checked = globalChatToggle, onCheckedChange = { globalChatToggle = it })
+                    }
+
+                    OutlinedTextField(
+                        value = disabledMsg,
+                        onValueChange = { disabledMsg = it },
+                        label = { Text("رسالة تظهر للجمهور عند الإيقاف") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = disabledListStr,
+                        onValueChange = { disabledListStr = it },
+                        label = { Text("أرقام معينة للمنع (مثال: 1,3,4 مع فصله بفواصل)") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Button(
+                        onClick = {
+                            viewModel.saveAppSettingsDirect(
+                                settings.copy(
+                                    isChatEnabledGlobal = globalChatToggle,
+                                    chatDisabledMessage = disabledMsg,
+                                    disabledChatProviderIds = disabledListStr
+                                )
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("مزامنة وحفظ قرارات الإيقاف الفورية")
+                    }
+                }
+            }
+        }
+
+        // Live App Versioning & Download URL Update
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("🔄 إعدادات الترقية والارتباط المباشر بالخادم (In-App Update):", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    
+                    OutlinedTextField(
+                        value = appUrlStr,
+                        onValueChange = { appUrlStr = it },
+                        label = { Text("رابط تحميل حزمة التطبيق APK من ميديا فاير أو غيره") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = appVerCode,
+                        onValueChange = { appVerCode = it },
+                        label = { Text("رمز الاصدار بالخادم للمقارنة الفورية (مثال: 2)") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Button(
+                        onClick = {
+                            viewModel.saveAppSettingsDirect(
+                                settings.copy(
+                                    latestVersionUrl = appUrlStr,
+                                    latestVersionCode = appVerCode.toIntOrNull() ?: 2
+                                )
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("مزامنة ونشر ترقية النظام للجمهور")
+                    }
+                }
+            }
+        }
+
+        // Data Management option, wipe chat records for security, or restore db backup
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("🧼 خصوصية المستخدمين وسجلات النظافة الفورية:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    
+                    Button(
+                        onClick = { viewModel.clearAllChatRecords() },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("🧼 حذف كافة سجلات محادثات الأعضاء نهائياً")
+                    }
+                }
+            }
+        }
+
+        // CSV Backup and Restore Clipboard Integration (allows backup transfer directly via simple base64 CSV)
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("💾 نظام النسخ الاحتياطي اللحظي لقاعدة البيانات ودليل اليمن:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("يمكنك تحويل قاعدة البيانات بالكامل إلى نص منسق وحفظه أو نسخه، واستعادته بأي وقت أو هاتف بدون فقدان معلوماتك.", fontSize = 11.sp, color = Color.Gray)
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                viewModel.backupDatabaseState()
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("توليد النسخة للحافظة 📋")
+                        }
+
+                        Button(
+                            onClick = {
+                                val clipData = clipboard.primaryClip
+                                if (clipData != null && clipData.itemCount > 0) {
+                                    val text = clipData.getItemAt(0).text.toString()
+                                    if (text.isNotBlank()) {
+                                        coroutineScope.launch {
+                                            val ok = viewModel.restoreDatabase(text)
+                                            if (ok) {
+                                                Toast.makeText(context, "✅ تم استيراد واستعادة قاعدة البيانات والمهنيين والمشرفين بنجاح!", Toast.LENGTH_LONG).show()
+                                            } else {
+                                                Toast.makeText(context, "❌ صيغة ملف التصدير غير صحيحة", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    Toast.makeText(context, "الحافظة فارغة! انسخ نص النسخ الاحتياطي أولاً.", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                        ) {
+                            Text("استعادة من الحافظة 📥")
+                        }
                     }
 
                     if (viewModel.backupStringState.isNotBlank()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Button(
+                            onClick = {
+                                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("yemen_db_backup", viewModel.backupStringState))
+                                Toast.makeText(context, "📋 تم نسخ كود النسخة الاحتياطية بنجاح! احفظه بأمان.", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Button(
-                                onClick = {
-                                    saveBackupLauncher.launch("yemen_directory_backup_${System.currentTimeMillis()}.txt")
-                                },
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                            ) {
-                                Text("حفظ كملف 📂", fontSize = 12.sp)
-                            }
-
-                            Button(
-                                onClick = {
-                                    clipboard.setText(AnnotatedString(viewModel.backupStringState))
-                                    Toast.makeText(context, "📋 تم اللصق في حافظتك كرمز!", Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-                            ) {
-                                Text("نسخ الرمز للذاكرة 📋", fontSize = 12.sp)
-                            }
+                            Text("نسخ الكود المتولد الآن ✂️")
                         }
                     }
                 }
             }
         }
-
-        // Auto schedule and DB cleaning
-        item {
-            Card {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("🧹 أداة جدولة وتصفية البيانات المجدولة (DB Cleaner):", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Text("جدولة مسح تلقائي دوري للبيانات المؤقتة وسجلات المحادثات والدردشة القديمة جداً لتوفير مساحة التخزين وزيادة أداء التطبيق.", fontSize = 11.sp, color = Color.Gray)
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("تفعيل التنظيف التلقائي المجدول:", fontSize = 12.sp)
-                        Switch(
-                            checked = autoCleanupEnabled,
-                            onCheckedChange = { autoCleanupEnabled = it }
-                        )
-                    }
-
-                    if (autoCleanupEnabled) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("تصفية البيانات التي مر عليها أكثر من:", fontSize = 11.sp)
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(selected = cleanupIntervalDays == 7, onClick = { cleanupIntervalDays = 7 })
-                                Text("أسبوع", fontSize = 11.sp)
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(selected = cleanupIntervalDays == 30, onClick = { cleanupIntervalDays = 30 })
-                                Text("شهر", fontSize = 11.sp)
-                            }
-                        }
-                    }
-
-                    Button(
-                        onClick = {
-                            viewModel.clearChatHistory()
-                            Toast.makeText(context, "🧹 تم تنظيف سجلات المحادثات القديمة والبيانات المؤقتة بنجاح، مما وفر مساحة في قاعدة البيانات!", Toast.LENGTH_LONG).show()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("تنظيف فوري للسجلات والدردشات القديمة 🗑️")
-                    }
-                }
-            }
-        }
-
-        // Restore card
-        item {
-            Card {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("🔄 استرجاع البيانات واستعادة المزامنة:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Text("يمكنك إما تحديد ملف النسخة الاحتياطية المخزن على جهازك (SD / Google Drive) بشكل مباشر، أو لصق كود النص الرمز أدناه.", fontSize = 11.sp, color = Color.Gray)
-
-                    Button(
-                        onClick = {
-                            loadBackupLauncher.launch(arrayOf("text/plain", "application/octet-stream"))
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
-                    ) {
-                        Text("استيراد وقراءة من ملف نسخة احتياطية 📁")
-                    }
-
-                    Divider(color = GrayBorder, modifier = Modifier.padding(vertical = 4.dp))
-
-                    OutlinedTextField(
-                        value = inputBackupText,
-                        onValueChange = { inputBackupText = it },
-                        placeholder = { Text("الصق هنا رمز كود النسخة الموجهة لاستعادة بياناتك بالكامل...") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(100.dp)
-                    )
-
-                    Button(
-                        onClick = {
-                            if (inputBackupText.isNotBlank()) {
-                                val ok = viewModel.restoreDatabaseState(inputBackupText)
-                                if (ok) {
-                                    Toast.makeText(context, "🔄 تم بنجاح استرجاع وتجديد البيانات والمزامنة الفورية!", Toast.LENGTH_LONG).show()
-                                    inputBackupText = ""
-                                } else {
-                                    Toast.makeText(context, "❌ فشلت عملية الاستعادة. تحقق من كود النسخة المدخل!", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
-                    ) {
-                        Text("استعادة والبدء بالمزامنة الفورية من الكود")
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun TabModerators(viewModel: AppViewModel) {
-    val context = LocalContext.current
-    val moderatorsList by viewModel.moderators.collectAsState(initial = emptyList())
-
-    var modUsername by remember { mutableStateOf("") }
-    var modPassword by remember { mutableStateOf("") }
-    var modPermissions by remember { mutableStateOf("ALL") } // ALL, READ_ONLY
-    var modCanEditCategories by remember { mutableStateOf(true) }
-    var modCanDeleteProviders by remember { mutableStateOf(true) }
-
-    var editingModerator by remember { mutableStateOf<Moderator?>(null) }
-    var editPassword by remember { mutableStateOf("") }
-    var editUsername by remember { mutableStateOf("") }
-    var editCanEditCategories by remember { mutableStateOf(true) }
-    var editCanDeleteProviders by remember { mutableStateOf(true) }
-
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "🛡️ إضافة مشرف جديد للمنظومة",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    OutlinedTextField(
-                        value = modUsername,
-                        onValueChange = { modUsername = it },
-                        label = { Text("اسم المستخدم (Username)") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = modPassword,
-                        onValueChange = { modPassword = it },
-                        label = { Text("كلمة المرور (Password)") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("الصلاحيات الرئيسية:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = modPermissions == "ALL", onClick = { modPermissions = "ALL" })
-                            Text("كاملة (ALL)", fontSize = 11.sp)
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = modPermissions == "READ_ONLY", onClick = { modPermissions = "READ_ONLY" })
-                            Text("قراءة فقط (READ)", fontSize = 11.sp)
-                        }
-                    }
-
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("صلاحية تعديل وإضافة الأقسام والخدمات:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            Switch(
-                                checked = modCanEditCategories,
-                                onCheckedChange = { modCanEditCategories = it }
-                            )
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("صلاحية حذف مقدمي الخدمات في الدليل:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            Switch(
-                                checked = modCanDeleteProviders,
-                                onCheckedChange = { modCanDeleteProviders = it }
-                            )
-                        }
-                    }
-
-                    Button(
-                        onClick = {
-                            if (modUsername.isBlank() || modPassword.isBlank()) {
-                                Toast.makeText(context, "⚠️ الرجاء ملء جميع الحقول المطلوبة!", Toast.LENGTH_SHORT).show()
-                            } else {
-                                viewModel.addModerator(
-                                    username = modUsername,
-                                    passwordHex = modPassword,
-                                    permissions = modPermissions,
-                                    canEditCategories = modCanEditCategories,
-                                    canDeleteProviders = modCanDeleteProviders
-                                )
-                                Toast.makeText(context, "✅ تم إضافة المشرف الجديد بنجاح ومزامنة الأجهزة!", Toast.LENGTH_LONG).show()
-                                modUsername = ""
-                                modPassword = ""
-                                modCanEditCategories = true
-                                modCanDeleteProviders = true
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("إنشاء حساب المشرف والبدء بالمخطط 🛡️")
-                    }
-                }
-            }
-        }
-
-        item {
-            Text("قائمة المشرفين المسجلين حالياً ومزامنتهم:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-        }
-
-        if (moderatorsList.isEmpty()) {
-            item {
-                Text("لا يوجد أي مشرفين مضافين حالياً.", color = Color.Gray, fontSize = 12.sp)
-            }
-        } else {
-            items(moderatorsList) { m ->
-                Card(
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(text = "👤 اسم المشرف: ${m.username}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                Text(text = "صلاحيات أساسية: " + if (m.permissions == "ALL") "كاملة 👑" else "قراءة فقط 👁️", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
-                                Text(text = "طريقة الدخول: ${m.passwordHex}", fontSize = 11.sp, color = Color.Gray)
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                IconButton(onClick = {
-                                    editingModerator = m
-                                    editUsername = m.username
-                                    editPassword = m.passwordHex
-                                    editCanEditCategories = m.canEditCategories
-                                    editCanDeleteProviders = m.canDeleteProviders
-                                }) {
-                                    Text("✏️", fontSize = 16.sp)
-                                }
-                                IconButton(onClick = {
-                                    if (m.username == "WAM2026") {
-                                        Toast.makeText(context, "❌ لا يمكن حذف الحساب الرئيسي للمدير الرئيسي!", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        viewModel.deleteModerator(m)
-                                        Toast.makeText(context, "🗑️ تم حذف حساب المشرف وتحديث قاعدة البيانات!", Toast.LENGTH_SHORT).show()
-                                    }
-                                }) {
-                                    Text("🗑️", fontSize = 16.sp)
-                                }
-                            }
-                        }
-
-                        // Real-time permission control toggles with individual switches
-                        Divider(color = Color.LightGray.copy(alpha = 0.3f), modifier = Modifier.height(1.dp).fillMaxWidth())
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable {
-                                viewModel.updateModerator(m.copy(canEditCategories = !m.canEditCategories))
-                                Toast.makeText(context, "🔄 تم مواءمة صلاحية الأقسام فورياً!", Toast.LENGTH_SHORT).show()
-                            }) {
-                                Checkbox(checked = m.canEditCategories, onCheckedChange = {
-                                    viewModel.updateModerator(m.copy(canEditCategories = it))
-                                    Toast.makeText(context, "🔄 تم مواءمة صلاحية الأقسام فورياً!", Toast.LENGTH_SHORT).show()
-                                })
-                                Text("تعديل الأقسام", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                            }
-
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable {
-                                viewModel.updateModerator(m.copy(canDeleteProviders = !m.canDeleteProviders))
-                                Toast.makeText(context, "🔄 تم مواءمة صلاحية حذف الأعضاء فورياً!", Toast.LENGTH_SHORT).show()
-                            }) {
-                                Checkbox(checked = m.canDeleteProviders, onCheckedChange = {
-                                    viewModel.updateModerator(m.copy(canDeleteProviders = it))
-                                    Toast.makeText(context, "🔄 تم مواءمة صلاحية حذف الأعضاء فورياً!", Toast.LENGTH_SHORT).show()
-                                })
-                                Text("حذف المهنيين", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if (editingModerator != null) {
-        val currentMod = editingModerator!!
-        AlertDialog(
-            onDismissRequest = { editingModerator = null },
-            title = { Text("✏️ تعديل حساب المشرف / كلمة المرور") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(
-                        value = editUsername,
-                        onValueChange = { editUsername = it },
-                        label = { Text("اسم المستخدم") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = editPassword,
-                        onValueChange = { editPassword = it },
-                        label = { Text("كلمة المرور") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("صلاحية تعديل الأقسام:", fontSize = 12.sp)
-                        Switch(
-                            checked = editCanEditCategories,
-                            onCheckedChange = { editCanEditCategories = it }
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("صلاحية حذف المهنيين:", fontSize = 12.sp)
-                        Switch(
-                            checked = editCanDeleteProviders,
-                            onCheckedChange = { editCanDeleteProviders = it }
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    if (editUsername.isNotBlank() && editPassword.isNotBlank()) {
-                        val updated = currentMod.copy(
-                            username = editUsername,
-                            passwordHex = editPassword,
-                            canEditCategories = editCanEditCategories,
-                            canDeleteProviders = editCanDeleteProviders
-                        )
-                        viewModel.updateModerator(updated)
-                        Toast.makeText(context, "✅ تم تحديث بيانات المشرف ومزامنتها على كل الأجهزة!", Toast.LENGTH_SHORT).show()
-                        editingModerator = null
-                    }
-                }) {
-                    Text("حفظ التعديل")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { editingModerator = null }) {
-                    Text("إلغاء")
-                }
-            }
-        )
     }
 }

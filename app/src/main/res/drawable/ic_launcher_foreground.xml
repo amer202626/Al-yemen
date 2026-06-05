@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item
-        android:width="100dp"
-        android:height="100dp"
-        android:drawable="@drawable/img_app_icon"
-        android:gravity="center" />
-</layer-list>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Centered bold Map Pin or Shield icon -->
+    <path
+        android:fillColor="#D4AF37"
+        android:pathData="M54,24c-11,0 -20,9 -20,20c0,15 20,40 20,40s20,-25 20,-40c0,-11 -9,-20 -20,-20zM54,50c-3.3,0 -6,-2.7 -6,-6s2.7,-6 6,-6s6,2.7 6,6s-2.7,6 -6,6z" />
+</vector>

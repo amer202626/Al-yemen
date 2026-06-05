@@ -4,37 +4,64 @@ import android.content.Context
 import androidx.room.Room
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class AppRepository(private val context: Context) {
 
-    private val db: AppDatabase = Room.databaseBuilder(
-        context.applicationContext,
-        AppDatabase::class.java,
-        "yemen_directory.db"
-    ).fallbackToDestructiveMigration().build()
+    private val db: AppDatabase by lazy {
+        Room.databaseBuilder(
+            context.applicationContext,
+            AppDatabase::class.java,
+            "yemen_directory_database"
+        ).fallbackToDestructiveMigration().build()
+    }
 
-    // Expose flows from DAOs
-    val categories: Flow<List<Category>> = db.categoryDao().getAllCategoriesFlow()
-    val activeProviders: Flow<List<ServiceProvider>> = db.serviceProviderDao().getActiveProvidersFlow()
-    val pendingProviders: Flow<List<ServiceProvider>> = db.serviceProviderDao().getPendingProvidersFlow()
-    val allProviders: Flow<List<ServiceProvider>> = db.serviceProviderDao().getAllProvidersFlow()
-    val banners: Flow<List<Banner>> = db.bannerDao().getAllBannersFlow()
-    val complaints: Flow<List<Complaint>> = db.complaintDao().getAllComplaintsFlow()
-    val chatMessages: Flow<List<ChatMessage>> = db.chatMessageDao().getAllMessagesFlow()
-    val settings: Flow<AppSettings?> = db.appSettingsDao().getSettingsFlow()
-    val moderators: Flow<List<Moderator>> = db.moderatorDao().getAllModeratorsFlow()
+    // Streams
+    val categories: Flow<List<Category>> = db.categoryDao().getAllCategories()
+    val providers: Flow<List<ServiceProvider>> = db.serviceProviderDao().getAllProviders()
+    val banners: Flow<List<Banner>> = db.bannerDao().getAllBanners()
+    val activeBanners: Flow<List<Banner>> = db.bannerDao().getActiveBanners()
+    val moderators: Flow<List<Moderator>> = db.moderatorDao().getAllModerators()
+    val complaints: Flow<List<Complaint>> = db.complaintDao().getAllComplaints()
+    val chatMessages: Flow<List<ChatMessage>> = db.chatMessageDao().getAllMessages()
+    val settingsFlow: Flow<AppSettings?> = db.appSettingsDao().getSettingsFlow()
 
-    // Seeding default values
-    suspend fun initializeDatabaseIfNeeded() {
-        val currentSettings = db.appSettingsDao().getSettingsDirect()
-        if (currentSettings == null) {
-            // No settings. Create initial settings
+    // Seeds
+    suspend fun seedIfNeeded() = withContext(Dispatchers.IO) {
+        // App Settings Seeding
+        val existingSettings = db.appSettingsDao().getSettingsDirect()
+        if (existingSettings == null) {
             db.appSettingsDao().insertSettings(AppSettings())
-            db.moderatorDao().insertModerator(Moderator(username = "WAM2026", passwordHex = "maher736462", permissions = "ALL"))
-            
-            // Seed Categories
-            val defaultCats = listOf(
+        }
+
+        // Moderators Seeding
+        val existingMods = db.moderatorDao().getAllModerators().firstOrNull()
+        if (existingMods.isNullOrEmpty()) {
+            db.moderatorDao().insertModerator(
+                Moderator(
+                    username = "WAM2026",
+                    passwordHex = "123456",
+                    permissions = "ALL",
+                    canEditCategories = true,
+                    canDeleteProviders = true
+                )
+            )
+            db.moderatorDao().insertModerator(
+                Moderator(
+                    username = "admin",
+                    passwordHex = "admin",
+                    permissions = "ALL",
+                    canEditCategories = true,
+                    canDeleteProviders = false
+                )
+            )
+        }
+
+        // Categories Seeding
+        val existingCats = db.categoryDao().getAllCategories().firstOrNull()
+        if (existingCats.isNullOrEmpty()) {
+            val cats = listOf(
                 Category(nameAr = "الكهرباء والشبكات", nameEn = "Electricians & Networks", sortOrder = 1, imageBase64 = "⚡"),
                 Category(nameAr = "السباكة والصرف", nameEn = "Plumbing Services", sortOrder = 2, imageBase64 = "🔧"),
                 Category(nameAr = "صيانة الأجهزة والهواتف", nameEn = "Phone & Laptop Maintenance", sortOrder = 3, imageBase64 = "📱"),
@@ -42,240 +69,226 @@ class AppRepository(private val context: Context) {
                 Category(nameAr = "صيانة السيارات وميكانيك", nameEn = "Car Maintenance", sortOrder = 5, imageBase64 = "🚗"),
                 Category(nameAr = "الأسر المنتجة والأطعمة", nameEn = "Productive Families & Catering", sortOrder = 6, imageBase64 = "🍲")
             )
-            for (cat in defaultCats) {
-                db.categoryDao().insertCategory(cat)
+            for (c in cats) {
+                db.categoryDao().insertCategory(c)
             }
+        }
 
-            // Seed some approved providers to look ready-made and professional!
-            val p1 = ServiceProvider(
-                name = "ماهر محمد طاهر",
-                phone = "777644670",
-                mainCategoryId = 1,
-                address = "صنعاء - جولة الرويشان",
-                neighborhood = "صنعاء القديمة",
-                isApproved = true,
-                isVerified = true,
-                isPinned = true,
-                isRecommended = true,
-                averageRating = 5.0f,
-                ratingCount = 12,
+        // Providers Seeding
+        val existingProviders = db.serviceProviderDao().getAllProviders().firstOrNull()
+        if (existingProviders.isNullOrEmpty()) {
+            // Seed a few dummy providers
+            val dummy1 = ServiceProvider(
+                name = "ماهر محمد",
                 profileImageBase64 = "👨‍🔧",
-                hasMonthlySubscription = true
+                phoneNumber = "777123456",
+                neighborhood = "حدة، صنعاء",
+                workAddress = "شارع حارتنا بجوار مستشفى اليمن للعيون",
+                mainCategoryId = 1,
+                isPending = false,
+                isPremium = true,
+                rating = 4.8f,
+                ratingCount = 12
             )
-            val p2 = ServiceProvider(
-                name = "أم أحمد للمأكولات اليمنية",
-                phone = "771234567",
-                mainCategoryId = 6,
-                address = "عدن - كريتر",
-                neighborhood = "حي القطيع",
-                isApproved = true,
-                isVerified = true,
-                isPinned = false,
-                isRecommended = true,
-                averageRating = 4.8f,
-                ratingCount = 9,
+            val dummy2 = ServiceProvider(
+                name = "أم هاني للطبخ اليمني والخبز",
                 profileImageBase64 = "🍲",
-                hasMonthlySubscription = false
+                phoneNumber = "733445566",
+                neighborhood = "شيراتون، صنعاء",
+                workAddress = "حي السقيا، صنعاء القديمة",
+                mainCategoryId = 6,
+                isPending = false,
+                rating = 4.9f,
+                ratingCount = 8
             )
-            val p3 = ServiceProvider(
-                name = "عبدالله يحيى مقبل",
-                phone = "733445566",
-                mainCategoryId = 3,
-                address = "تعز - شارع جمال",
-                neighborhood = "حي المسبح",
-                isApproved = true,
-                isVerified = false,
-                isPinned = false,
-                isRecommended = false,
-                averageRating = 4.2f,
-                ratingCount = 3,
-                profileImageBase64 = "📱",
-                hasMonthlySubscription = true
-            )
-            db.serviceProviderDao().insertProvider(p1)
-            db.serviceProviderDao().insertProvider(p2)
-            db.serviceProviderDao().insertProvider(p3)
-
-            // Seed banners
-            val banner1 = Banner(
-                type = "TEXT",
-                content = "🎉 مرحباً بكم في دليل اليمن للخدمات المنزلية وتفعيل الأسر المنتجة الفوري!",
-                durationSeconds = 6,
-                targetUrl = "https://example.com/welcome",
-                bannerSize = "MEDIUM"
-            )
-            val banner2 = Banner(
-                type = "TEXT",
-                content = "📢 إعلان ممول: احصل على خصم 20% على خدمات الصيانة والتركيب مع المهندس ماهر اليماني!",
-                durationSeconds = 7,
-                targetUrl = "https://example.com/maher",
-                bannerSize = "LARGE"
-            )
-            db.bannerDao().insertBanner(banner1)
-            db.bannerDao().insertBanner(banner2)
+            db.serviceProviderDao().insertProvider(dummy1)
+            db.serviceProviderDao().insertProvider(dummy2)
         }
     }
 
-    // --- Moderator Management ---
-    suspend fun addModerator(mod: Moderator) = db.moderatorDao().insertModerator(mod)
-    suspend fun updateModerator(mod: Moderator) = db.moderatorDao().updateModerator(mod)
-    suspend fun deleteModerator(mod: Moderator) = db.moderatorDao().deleteModerator(mod)
-
-    // --- Category Management ---
-    suspend fun addCategory(cat: Category) = db.categoryDao().insertCategory(cat)
-    suspend fun updateCategory(cat: Category) = db.categoryDao().updateCategory(cat)
-    suspend fun deleteCategory(cat: Category) = db.categoryDao().deleteCategory(cat)
-
-    // --- Service Provider Management ---
-    suspend fun getProviderById(id: Int) = db.serviceProviderDao().getProviderById(id)
-    suspend fun insertProvider(provider: ServiceProvider) = db.serviceProviderDao().insertProvider(provider)
-    suspend fun updateProvider(provider: ServiceProvider) = db.serviceProviderDao().updateProvider(provider)
-    suspend fun deleteProvider(provider: ServiceProvider) = db.serviceProviderDao().deleteProvider(provider)
-
-    // --- Banner Management ---
-    suspend fun addBanner(banner: Banner) = db.bannerDao().insertBanner(banner)
-    suspend fun updateBanner(banner: Banner) = db.bannerDao().updateBanner(banner)
-    suspend fun deleteBanner(banner: Banner) = db.bannerDao().deleteBanner(banner)
-
-    // --- Complaint Management ---
-    suspend fun addComplaint(complaint: Complaint) = db.complaintDao().insertComplaint(complaint)
-    suspend fun deleteComplaint(complaint: Complaint) = db.complaintDao().deleteComplaint(complaint)
-
-    // --- Chat Management ---
-    suspend fun sendMessage(msg: ChatMessage) = db.chatMessageDao().insertMessage(msg)
-    suspend fun clearChat() = db.chatMessageDao().clearAllMessages()
-
-    // --- Settings Management ---
-    suspend fun getAppSettingsDirect(): AppSettings {
-        return db.appSettingsDao().getSettingsDirect() ?: AppSettings()
+    // Settings
+    suspend fun getSettingsDirect(): AppSettings = withContext(Dispatchers.IO) {
+        db.appSettingsDao().getSettingsDirect() ?: AppSettings()
     }
-    suspend fun updateSettings(settings: AppSettings) {
+
+    suspend fun saveSettings(settings: AppSettings) = withContext(Dispatchers.IO) {
         db.appSettingsDao().insertSettings(settings)
     }
 
-    // Backup & Restore Simulation (JSON/String representation for portable recovery)
-    suspend fun exportDatabaseToJson(): String {
-        val s = getAppSettingsDirect()
-        val cats = db.categoryDao().getAllCategoriesFlow().firstOrNull() ?: emptyList()
-        val provs = db.serviceProviderDao().getAllProvidersFlow().firstOrNull() ?: emptyList()
-        val complaintsList = db.complaintDao().getAllComplaintsFlow().firstOrNull() ?: emptyList()
-        val bannersList = db.bannerDao().getAllBannersFlow().firstOrNull() ?: emptyList()
-        val moderatorsList = db.moderatorDao().getAllModeratorsFlow().firstOrNull() ?: emptyList()
+    // Categories
+    suspend fun addCategory(cat: Category) = withContext(Dispatchers.IO) {
+        db.categoryDao().insertCategory(cat)
+    }
 
-        // Construct a simple, clear text format to serve as a secure portable backup string
+    suspend fun updateCategory(cat: Category) = withContext(Dispatchers.IO) {
+        db.categoryDao().updateCategory(cat)
+    }
+
+    suspend fun deleteCategory(cat: Category) = withContext(Dispatchers.IO) {
+        db.categoryDao().deleteCategory(cat)
+    }
+
+    // Providers
+    suspend fun addProvider(p: ServiceProvider) = withContext(Dispatchers.IO) {
+        db.serviceProviderDao().insertProvider(p)
+    }
+
+    suspend fun updateProvider(p: ServiceProvider) = withContext(Dispatchers.IO) {
+        db.serviceProviderDao().insertProvider(p) // Room's insert handles REPLACE on conflict
+    }
+
+    suspend fun deleteProvider(p: ServiceProvider) = withContext(Dispatchers.IO) {
+        db.serviceProviderDao().deleteProvider(p)
+    }
+
+    // Banners
+    suspend fun addBanner(b: Banner) = withContext(Dispatchers.IO) {
+        db.bannerDao().insertBanner(b)
+    }
+
+    suspend fun updateBanner(b: Banner) = withContext(Dispatchers.IO) {
+        db.bannerDao().updateBanner(b)
+    }
+
+    suspend fun deleteBanner(b: Banner) = withContext(Dispatchers.IO) {
+        db.bannerDao().deleteBanner(b)
+    }
+
+    // Moderators
+    suspend fun addModerator(m: Moderator) = withContext(Dispatchers.IO) {
+        db.moderatorDao().insertModerator(m)
+    }
+
+    suspend fun updateModerator(m: Moderator) = withContext(Dispatchers.IO) {
+        db.moderatorDao().updateModerator(m)
+    }
+
+    suspend fun deleteModerator(m: Moderator) = withContext(Dispatchers.IO) {
+        db.moderatorDao().deleteModerator(m)
+    }
+
+    // Complaints
+    suspend fun addComplaint(c: Complaint) = withContext(Dispatchers.IO) {
+        db.complaintDao().insertComplaint(c)
+    }
+
+    suspend fun deleteComplaint(c: Complaint) = withContext(Dispatchers.IO) {
+        db.complaintDao().deleteComplaint(c)
+    }
+
+    // Chats
+    suspend fun insertChatMessage(msg: ChatMessage) = withContext(Dispatchers.IO) {
+        db.chatMessageDao().insertMessage(msg)
+    }
+
+    suspend fun clearAllChatLogs() = withContext(Dispatchers.IO) {
+        db.chatMessageDao().deleteAllMessages()
+    }
+
+    suspend fun scheduleAutomaticChatPrune(cutoffMs: Long) = withContext(Dispatchers.IO) {
+        db.chatMessageDao().deleteOldMessages(cutoffMs)
+    }
+
+    // CSV Database Backup Engine
+    suspend fun exportToCsvString(): String = withContext(Dispatchers.IO) {
         val sb = StringBuilder()
-        sb.append("YEMEN_BACKUP_V1\n")
-        sb.append("=== SETTINGS ===\n")
-        sb.append("appName=${s.appName};themeChoice=${s.themeChoice};adFooterText=${s.adFooterText};supportPhone=${s.supportPhone};supportEmail=${s.supportEmail};supportWhatsapp=${s.supportWhatsapp};isMaintenanceMode=${s.isMaintenanceMode}\n")
         sb.append("=== CATEGORIES ===\n")
+        val cats = db.categoryDao().getAllCategories().firstOrNull() ?: emptyList()
         for (c in cats) {
             sb.append("${c.id},${c.nameAr},${c.nameEn},${c.imageBase64},${c.sortOrder},${c.parentId ?: "null"}\n")
         }
+
         sb.append("=== PROVIDERS ===\n")
+        val provs = db.serviceProviderDao().getAllProviders().firstOrNull() ?: emptyList()
         for (p in provs) {
-            sb.append("${p.id}|${p.name}|${p.phone}|${p.mainCategoryId}|${p.address}|${p.neighborhood}|${p.isApproved}|${p.isRejected}|${p.isPinned}|${p.isRecommended}|${p.isVerified}|${p.averageRating}|${p.hasMonthlySubscription}\n")
+            sb.append("${p.id},${p.name},${p.phoneNumber},${p.neighborhood},${p.workAddress},${p.mainCategoryId},${p.subCategoryId ?: "null"},${p.isPending},${p.isBlocked},${p.isPremium},${p.rating},${p.ratingCount},${p.profileImageBase64.take(50)}\n")
         }
+
         sb.append("=== MODERATORS ===\n")
-        for (m in moderatorsList) {
-            sb.append("${m.id},${m.username},${m.passwordHex},${m.permissions}\n")
+        val mods = db.moderatorDao().getAllModerators().firstOrNull() ?: emptyList()
+        for (m in mods) {
+            sb.append("${m.id},${m.username},${m.passwordHex},${m.permissions},${m.canEditCategories},${m.canDeleteProviders}\n")
         }
-        sb.append("=== END ===")
-        return sb.toString()
+
+        sb.toString()
     }
 
-    suspend fun importDatabaseFromJson(backupStr: String): Boolean {
+    // Restore Database from string
+    suspend fun restoreFromCsvString(csv: String): Boolean = withContext(Dispatchers.IO) {
         try {
-            if (!backupStr.startsWith("YEMEN_BACKUP_V1")) return false
-            val lines = backupStr.lines()
+            val lines = csv.lineSequence().iterator()
             var section = ""
-            for (line in lines) {
-                if (line.isBlank()) continue
-                if (line.startsWith("===")) {
-                    section = line.trim()
+            while (lines.hasNext()) {
+                val origLine = lines.next().trim()
+                if (origLine.isEmpty()) continue
+                if (origLine.startsWith("===")) {
+                    section = origLine
                     continue
                 }
+
+                val parts = origLine.split(",")
                 when (section) {
-                    "=== SETTINGS ===" -> {
-                        val parts = line.split(";")
-                        val map = parts.associate {
-                            val kv = it.split("=")
-                            if (kv.size == 2) kv[0] to kv[1] else "" to ""
-                        }
-                        val current = getAppSettingsDirect()
-                        val updated = current.copy(
-                            appName = map["appName"] ?: current.appName,
-                            themeChoice = map["themeChoice"] ?: current.themeChoice,
-                            adFooterText = map["adFooterText"] ?: current.adFooterText,
-                            supportPhone = map["supportPhone"] ?: current.supportPhone,
-                            supportEmail = map["supportEmail"] ?: current.supportEmail,
-                            supportWhatsapp = map["supportWhatsapp"] ?: current.supportWhatsapp,
-                            isMaintenanceMode = (map["isMaintenanceMode"] ?: "false").toBoolean()
-                        )
-                        updateSettings(updated)
-                    }
                     "=== CATEGORIES ===" -> {
-                        val parts = line.split(",")
                         if (parts.size >= 5) {
-                            val id = parts[0].toIntOrNull() ?: 0
+                            val id = parts[0].toIntOrNull() ?: continue
                             val nameAr = parts[1]
                             val nameEn = parts[2]
                             val img = parts[3]
                             val sort = parts[4].toIntOrNull() ?: 0
                             val parent = if (parts.size > 5 && parts[5] != "null") parts[5].toIntOrNull() else null
-                            
                             val cat = Category(id = id, nameAr = nameAr, nameEn = nameEn, imageBase64 = img, sortOrder = sort, parentId = parent)
                             db.categoryDao().insertCategory(cat)
                         }
                     }
                     "=== PROVIDERS ===" -> {
-                        val parts = line.split("|")
-                        if (parts.size >= 12) {
-                            val id = parts[0].toIntOrNull() ?: 0
+                        if (parts.size >= 8) {
+                            val id = parts[0].toIntOrNull() ?: continue
                             val name = parts[1]
                             val phone = parts[2]
-                            val catId = parts[3].toIntOrNull() ?: 1
-                            val addr = parts[4]
-                            val neigh = parts[5]
-                            val isAppr = parts[6].toBoolean()
-                            val isRej = parts[7].toBoolean()
-                            val isPin = parts[8].toBoolean()
-                            val isRec = parts[9].toBoolean()
-                            val isVer = parts[10].toBoolean()
-                            val rating = parts[11].toFloatOrNull() ?: 0f
-                            val sub = if (parts.size > 12) parts[12].toBoolean() else false
+                            val neighborhood = parts[3]
+                            val address = parts[4]
+                            val mCat = parts[5].toIntOrNull() ?: 0
+                            val sCat = if (parts[6] != "null") parts[6].toIntOrNull() else null
+                            val isP = parts[7].toBoolean()
+                            val isB = if (parts.size > 8) parts[8].toBoolean() else false
+                            val isPr = if (parts.size > 9) parts[9].toBoolean() else false
+                            val rat = if (parts.size > 10) parts[10].toFloatOrNull() ?: 5f else 5f
+                            val ratCnt = if (parts.size > 11) parts[11].toIntOrNull() ?: 1 else 1
 
-                            val p = ServiceProvider(
-                                id = id, name = name, phone = phone, mainCategoryId = catId,
-                                address = addr, neighborhood = neigh, isApproved = isAppr, isRejected = isRej,
-                                isPinned = isPin, isRecommended = isRec, isVerified = isVer, averageRating = rating,
-                                hasMonthlySubscription = sub
+                            val existingAndLoaded = db.serviceProviderDao().getAllProviders().firstOrNull()?.find { it.id == id }
+                            val pImg = existingAndLoaded?.profileImageBase64 ?: "👨‍🔧"
+
+                            val prov = ServiceProvider(
+                                id = id, name = name, phoneNumber = phone, neighborhood = neighborhood,
+                                workAddress = address, mainCategoryId = mCat, subCategoryId = sCat,
+                                isPending = isP, isBlocked = isB, isPremium = isPr, rating = rat, ratingCount = ratCnt,
+                                profileImageBase64 = pImg
                             )
-                            db.serviceProviderDao().insertProvider(p)
+                            db.serviceProviderDao().insertProvider(prov)
                         }
                     }
                     "=== MODERATORS ===" -> {
-                        val parts = line.split(",")
                         if (parts.size >= 4) {
-                            val id = parts[0].toIntOrNull() ?: 0
+                            val id = parts[0].toIntOrNull() ?: continue
                             val user = parts[1]
                             val pass = parts[2]
                             val perm = parts[3]
+                            val canEditCats = if (parts.size > 4) parts[4].toBoolean() else true
+                            val canDelProvs = if (parts.size > 5) parts[5].toBoolean() else true
 
-                            val m = Moderator(
-                                id = id,
-                                username = user,
-                                passwordHex = pass,
-                                permissions = perm
+                            val mod = Moderator(
+                                id = id, username = user, passwordHex = pass, permissions = perm,
+                                canEditCategories = canEditCats, canDeleteProviders = canDelProvs
                             )
-                            db.moderatorDao().insertModerator(m)
+                            db.moderatorDao().insertModerator(mod)
                         }
                     }
                 }
             }
-            return true
+            true
         } catch (e: Exception) {
             e.printStackTrace()
-            return false
+            false
         }
     }
 }
