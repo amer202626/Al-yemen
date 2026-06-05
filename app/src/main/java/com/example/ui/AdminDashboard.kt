@@ -834,9 +834,35 @@ fun TabModeratorsManagement(viewModel: AppViewModel, moderators: List<Moderator>
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text("👤 المشرف: ${m.username}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text("كلمة المرور: ${m.passwordHex}", fontSize = 11.sp, color = Color.Gray)
+                            
+                            var newPassInput by remember { mutableStateOf(m.passwordHex) }
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = newPassInput,
+                                    onValueChange = { newPassInput = it },
+                                    label = { Text("تغيير كلمة المرور", fontSize = 9.sp) },
+                                    modifier = Modifier.weight(1.3f),
+                                    textStyle = MaterialTheme.typography.bodySmall,
+                                    singleLine = true
+                                )
+                                Button(
+                                    onClick = {
+                                        if (newPassInput.isNotBlank()) {
+                                            viewModel.updateModerator(m.copy(passwordHex = newPassInput.trim()))
+                                        }
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 8.dp),
+                                    modifier = Modifier.height(35.dp)
+                                ) {
+                                    Text("تحديث 🔐", fontSize = 10.sp)
+                                }
+                            }
                         }
                         IconButton(
                             onClick = {
@@ -915,6 +941,13 @@ fun TabThemeIconConfiguration(viewModel: AppViewModel, settings: AppSettings, co
     var aboutImageBase64String by remember { mutableStateOf(settings.aboutImageBase64) }
     var isAboutTextDeletedOption by remember { mutableStateOf(settings.isAboutContentTextDeleted) }
     var isAboutImageReplacesContentOption by remember { mutableStateOf(settings.isAboutImageReplacesContent) }
+
+    // Welcome properties
+    var welcomeTextStr by remember { mutableStateOf(settings.welcomeText) }
+    var welcomeImgBase64 by remember { mutableStateOf(settings.welcomeImageBase64) }
+    var isWelcomeImgActive by remember { mutableStateOf(settings.isWelcomeImageActive) }
+    var welcomeTxtSz by remember { mutableStateOf(settings.welcomeTextSize.toString()) }
+    var welcomeTxtPos by remember { mutableStateOf(settings.welcomeTextPosition) }
 
     var appIconSz by remember { mutableStateOf(settings.appIconSize.toString()) }
     var footerImageBase64 by remember { mutableStateOf(settings.footerBackgroundImageBase64) }
@@ -995,6 +1028,22 @@ fun TabThemeIconConfiguration(viewModel: AppViewModel, settings: AppSettings, co
                 }
             } catch (e: Exception) {
                 Toast.makeText(context, "فشل تعيين خلفية التذييل", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val welcomeImgLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    val bytes = stream.readBytes()
+                    welcomeImgBase64 = compressAndResizeImageAdmin(bytes)
+                    Toast.makeText(context, "🖼️ تم اختيار صورة الترحيب البديلة بنجاح!", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "فشل تعيين صورة الترحيب", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -1210,6 +1259,73 @@ fun TabThemeIconConfiguration(viewModel: AppViewModel, settings: AppSettings, co
             }
         }
 
+        // Welcome controls Card
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("👋 إعدادات رسالة الترحيب / صورة الترحيب بالدليل:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("تفعيل صورة الترحيب بدلاً من النص:", fontSize = 12.sp)
+                        Switch(checked = isWelcomeImgActive, onCheckedChange = { isWelcomeImgActive = it })
+                    }
+
+                    if (isWelcomeImgActive) {
+                        Button(onClick = { welcomeImgLauncher.launch("image/*") }, modifier = Modifier.fillMaxWidth()) {
+                            Text("اختر صورة الترحيب من استوديو الهاتف 🖼️")
+                        }
+                        if (welcomeImgBase64.isNotBlank()) {
+                            Text("تم تحديد مظهر صورة الترحيب بنجاح وسيتم حفظها بقاعدة البيانات.", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+                        }
+                    } else {
+                        OutlinedTextField(
+                            value = welcomeTextStr,
+                            onValueChange = { welcomeTextStr = it },
+                            label = { Text("نص رسالة الترحيب العلوية") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = welcomeTxtSz,
+                            onValueChange = { welcomeTxtSz = it },
+                            label = { Text("حجم الخط") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        Column(modifier = Modifier.weight(2.3f)) {
+                            Text("مكان ظهور رسالة الترحيب:", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                FilterChip(
+                                    selected = welcomeTxtPos == "TOP",
+                                    onClick = { welcomeTxtPos = "TOP" },
+                                    label = { Text("قمة ▴", fontSize = 10.sp) }
+                                )
+                                FilterChip(
+                                    selected = welcomeTxtPos == "MIDDLE",
+                                    onClick = { welcomeTxtPos = "MIDDLE" },
+                                    label = { Text("وسط ◂", fontSize = 10.sp) }
+                                )
+                                FilterChip(
+                                    selected = welcomeTxtPos == "BOTTOM",
+                                    onClick = { welcomeTxtPos = "BOTTOM" },
+                                    label = { Text("تذييل ▾", fontSize = 10.sp) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Footer background change from gallery
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -1252,7 +1368,12 @@ fun TabThemeIconConfiguration(viewModel: AppViewModel, settings: AppSettings, co
                             aboutImageBase64 = aboutImageBase64String,
                             isAboutContentTextDeleted = isAboutTextDeletedOption,
                             isAboutImageReplacesContent = isAboutImageReplacesContentOption,
-                            footerBackgroundImageBase64 = footerImageBase64
+                            footerBackgroundImageBase64 = footerImageBase64,
+                            welcomeText = welcomeTextStr,
+                            welcomeImageBase64 = welcomeImgBase64,
+                            isWelcomeImageActive = isWelcomeImgActive,
+                            welcomeTextSize = welcomeTxtSz.toFloatOrNull() ?: settings.welcomeTextSize,
+                            welcomeTextPosition = welcomeTxtPos
                         )
                     )
                 },
@@ -1269,6 +1390,9 @@ fun TabDatabasePrivacyBackups(viewModel: AppViewModel, settings: AppSettings, co
     var globalChatToggle by remember { mutableStateOf(settings.isChatEnabledGlobal) }
     var disabledMsg by remember { mutableStateOf(settings.chatDisabledMessage) }
     var disabledListStr by remember { mutableStateOf(settings.disabledChatProviderIds) }
+    var blockVisitorsChat by remember { mutableStateOf(settings.preventVisitorsChat) }
+    var blockProvidersChat by remember { mutableStateOf(settings.preventProvidersChat) }
+    var blockedUserPhonesStr by remember { mutableStateOf(settings.blockedChatUserPhones) }
     
     // Live update app version URL for DownloadManager
     var appUrlStr by remember { mutableStateOf(settings.latestVersionUrl) }
@@ -1310,13 +1434,42 @@ fun TabDatabasePrivacyBackups(viewModel: AppViewModel, settings: AppSettings, co
                         modifier = Modifier.fillMaxWidth()
                     )
 
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("منع الزوار (غير المشتركين) من الدردشة:", fontSize = 12.sp)
+                        Switch(checked = blockVisitorsChat, onCheckedChange = { blockVisitorsChat = it })
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("منع مقدمي الخدمات من إجراء أو الرد على المحادثات:", fontSize = 12.sp)
+                        Switch(checked = blockProvidersChat, onCheckedChange = { blockProvidersChat = it })
+                    }
+
+                    OutlinedTextField(
+                        value = blockedUserPhonesStr,
+                        onValueChange = { blockedUserPhonesStr = it },
+                        label = { Text("هواتف الزوار أو مقدمي الخدمة المحظورين (مفصولة بفواصل)") },
+                        placeholder = { Text("مثال: 777644670,7112233") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
                     Button(
                         onClick = {
                             viewModel.saveAppSettingsDirect(
                                 settings.copy(
                                     isChatEnabledGlobal = globalChatToggle,
                                     chatDisabledMessage = disabledMsg,
-                                    disabledChatProviderIds = disabledListStr
+                                    disabledChatProviderIds = disabledListStr,
+                                    preventVisitorsChat = blockVisitorsChat,
+                                    preventProvidersChat = blockProvidersChat,
+                                    blockedChatUserPhones = blockedUserPhonesStr
                                 )
                             )
                         },

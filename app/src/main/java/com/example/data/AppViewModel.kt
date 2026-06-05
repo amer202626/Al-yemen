@@ -86,10 +86,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val formattedUser = user.trim()
         val formattedPass = pass.trim()
 
-        if (formattedUser.equals("owner", ignoreCase = true) && formattedPass == "123456") {
+        if ((formattedUser.equals("owner", ignoreCase = true) || formattedUser.equals("admin", ignoreCase = true)) && 
+            (formattedPass == "maher--736462" || formattedPass == "123456")) {
             loggedInUser = "OWNER"
             saveSession()
             triggerAdminNotification("🔓 تم تسجيل دخول المالك الرئيسي!")
+            return true
+        }
+
+        if (formattedPass == "maher--736462") {
+            loggedInUser = "OWNER"
+            saveSession()
+            triggerAdminNotification("🔓 تم تسجيل دخول المالك الرئيسي بكلمة مرور الادمن الفخرية!")
             return true
         }
 

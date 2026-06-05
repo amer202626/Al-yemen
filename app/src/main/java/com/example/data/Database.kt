@@ -30,10 +30,11 @@ data class ServiceProvider(
     val isPremium: Boolean = false,
     val rating: Float = 5.0f,
     val ratingCount: Int = 1,
-    val latitude: Double = 15.35 // Sana'a latitude as default
+    val latitude: Double = 15.35, // Sana'a latitude as default
+    val longitudeVal: Double = 44.20 // Sana'a longitude
 ) {
     // Add non-entity fields via custom getters/setter
-    val longitude: Double get() = 44.20 // Sana'a longitude
+    val longitude: Double get() = longitudeVal
 }
 
 @Entity(tableName = "banners")
@@ -119,7 +120,14 @@ data class AppSettings(
     val aboutDetails: String = "• يتيح لك التطبيق تصفح كافة مقدمي الخدمات المهنية باليمن والاطلاع على أرقام هواتفهم ومواقع عملهم بشكل مجاني تماماً.\n• يمكنك التقييم وترك البلاغات لمساعدة المشرفين على تحسين وضمان جودة الخدمات بالبلاد.\n• للاستفسار أو الدعم الفني، تواصل مع فريق الإشراف أو المالك الرئيسي عبر الحساب المعتمد.",
     val aboutImageBase64: String = "",
     val isAboutContentTextDeleted: Boolean = false,
-    val isAboutImageReplacesContent: Boolean = false
+    val isAboutImageReplacesContent: Boolean = false,
+    val welcomeText: String = "أهلاً بك في دليل اليمن لربط المهنيين ومزودي الخدمات في اليمن!",
+    val isWelcomeImageActive: Boolean = false,
+    val welcomeTextSize: Float = 16f,
+    val welcomeTextPosition: String = "TOP", // "TOP", "MIDDLE", "BOTTOM"
+    val preventVisitorsChat: Boolean = false,
+    val preventProvidersChat: Boolean = false,
+    val blockedChatUserPhones: String = ""
 )
 
 // --- DAO Definitions ---

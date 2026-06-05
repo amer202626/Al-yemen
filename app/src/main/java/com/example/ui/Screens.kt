@@ -127,6 +127,13 @@ fun HomeScreen(
             .padding(horizontal = 14.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // TOP Welcome Message
+        if (settings.welcomeTextPosition == "TOP") {
+            item {
+                WelcomeHeader(settings = settings)
+            }
+        }
+
         // --- AD BANNER SLIDER ---
         if (allBannersList.isNotEmpty()) {
             item {
@@ -352,6 +359,13 @@ fun HomeScreen(
             }
         }
 
+        // MIDDLE Welcome Message
+        if (settings.welcomeTextPosition == "MIDDLE") {
+            item {
+                WelcomeHeader(settings = settings)
+            }
+        }
+
         // --- CATEGORIES LIST ---
         item {
             Text(
@@ -378,6 +392,13 @@ fun HomeScreen(
                         label = { Text("${cat.imageBase64} ${cat.nameAr}") }
                     )
                 }
+            }
+        }
+
+        // BOTTOM Welcome Message
+        if (settings.welcomeTextPosition == "BOTTOM") {
+            item {
+                WelcomeHeader(settings = settings)
             }
         }
 
@@ -493,28 +514,72 @@ fun RegisterScreen(viewModel: AppViewModel, settings: AppSettings, categoriesLis
     var neighborhood by remember { mutableStateOf("") }
     var address by remember { mutableStateOf("") }
     var selectedMainCategory by remember { mutableStateOf<Category?>(null) }
+    var selectedSubCategory by remember { mutableStateOf<Category?>(null) }
     var profileImage by remember { mutableStateOf("") }
     var idCardImage by remember { mutableStateOf("") }
 
-    var expandedDropdown by remember { mutableStateOf(false) }
+    // Map location fields (latitude, longitudeVal)
+    var customLat by remember { mutableStateOf("15.35") }
+    var customLng by remember { mutableStateOf("44.20") }
 
-    val cameraLauncher = rememberLauncherForActivityResult(
+    var expandedMainDropdown by remember { mutableStateOf(false) }
+    var expandedSubDropdown by remember { mutableStateOf(false) }
+
+    // Cameras launchers
+    val cameraProfileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicturePreview()
     ) { bitmap ->
         if (bitmap != null) {
-            val base64 = compressAndResizeImage(bitmap)
-            profileImage = base64
-            Toast.makeText(context, "📸 تم التقاط ومسح الصورة الشخصية وتصغيرها آلياً!", Toast.LENGTH_SHORT).show()
+            profileImage = compressAndResizeImage(bitmap)
+            Toast.makeText(context, "📸 تم التقاط الصورة الشخصية سيلفي بنجاح!", Toast.LENGTH_SHORT).show()
         }
     }
 
-    val idLauncher = rememberLauncherForActivityResult(
+    val cameraIdLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicturePreview()
     ) { bitmap ->
         if (bitmap != null) {
-            val base64 = compressAndResizeImage(bitmap)
-            idCardImage = base64
-            Toast.makeText(context, "📸 تم التقاط وتصغير صورة الهوية الشخصية!", Toast.LENGTH_SHORT).show()
+            idCardImage = compressAndResizeImage(bitmap)
+            Toast.makeText(context, "📸 تم التقاط صورة الهوية بنجاح!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Gallery launchers
+    val galleryProfileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    val bytes = stream.readBytes()
+                    val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    if (bitmap != null) {
+                        profileImage = compressAndResizeImage(bitmap)
+                        Toast.makeText(context, "🖼️ تم تحميل الصورة الشخصية من الاستوديو!", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "فشل تحميل الصورة", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val galleryIdLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    val bytes = stream.readBytes()
+                    val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    if (bitmap != null) {
+                        idCardImage = compressAndResizeImage(bitmap)
+                        Toast.makeText(context, "🖼️ تم تحميل بطاقة الهوية من الاستوديو!", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "فشل تحميل صيانة الهوية", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -531,13 +596,13 @@ fun RegisterScreen(viewModel: AppViewModel, settings: AppSettings, categoriesLis
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
-                        text = "✍️ تسجيل مهني جديد بالمنصة",
+                        text = "✍️ تقديم طلب انضمام لـ دليل اليمن المهني",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
                     Text(
-                        text = "يرجى تعبئة جميع الحقول وإرفاق صور واضحة لضمان موافقة المشرفين السريعة على طلبك.",
+                        text = "يرجى تعبئة الحقول الإجبارية وإرفاق صورتك الشخصية بدقة لضمان سرعة موافقة الإدارة.",
                         color = Color.Gray,
                         fontSize = 11.sp
                     )
@@ -546,123 +611,223 @@ fun RegisterScreen(viewModel: AppViewModel, settings: AppSettings, categoriesLis
         }
 
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // Name (triple, mandatory)
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("الاسم الكامل ثنائياً أو ثلاثياً") },
+                    label = { Text("الاسم الكامل ثلاثياً (إجباري) *") },
+                    placeholder = { Text("مثال: علي عبدالله صالح") },
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                // Phone (mandatory)
                 OutlinedTextField(
                     value = phone,
                     onValueChange = { phone = it },
-                    label = { Text("رقم الهاتف (الواتساب أو الإتصال)") },
+                    label = { Text("رقم الهاتف للتواصل باليمن (إجباري) *") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                // Neighborhood of residence (mandatory)
                 OutlinedTextField(
                     value = neighborhood,
                     onValueChange = { neighborhood = it },
-                    label = { Text("الحي أو المديرية (مثال: السبعين، حدة...)") },
+                    label = { Text("منطقة الإقامة الحالية / الحي (إجباري) *") },
+                    placeholder = { Text("مثال: حي حدة، السبعين") },
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                // Workplace / address (mandatory)
                 OutlinedTextField(
                     value = address,
                     onValueChange = { address = it },
-                    label = { Text("عنوان العمل التفصيلي") },
+                    label = { Text("عنوان مركز العمل الصنعاني الحالي بالتفصيل (إجباري) *") },
+                    placeholder = { Text("مثال: مقابل مستشفى الثورة") },
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // Category dropdown selection
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("📁 اختيار التصنيف المهني والتخصص الفرعي:", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = CharcoalGoldPrimary)
+
+                // Main Category selector (mandatory)
                 Box(modifier = Modifier.fillMaxWidth()) {
                     OutlinedButton(
-                        onClick = { expandedDropdown = true },
+                        onClick = { expandedMainDropdown = true },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(selectedMainCategory?.let { "${it.imageBase64} ${it.nameAr}" } ?: "اختر التخصص المهني الأساسي...")
+                        Text(selectedMainCategory?.let { "📂 القسم الأساسي: ${it.imageBase64} ${it.nameAr}" } ?: "اختر القسم المهني الأساسي (إجباري) *")
                     }
                     DropdownMenu(
-                        expanded = expandedDropdown,
-                        onDismissRequest = { expandedDropdown = false }
+                        expanded = expandedMainDropdown,
+                        onDismissRequest = { expandedMainDropdown = false }
                     ) {
                         for (cat in categoriesList.filter { it.parentId == null }) {
                             DropdownMenuItem(
                                 text = { Text("${cat.imageBase64} ${cat.nameAr}") },
                                 onClick = {
                                     selectedMainCategory = cat
-                                    expandedDropdown = false
+                                    selectedSubCategory = null // reset sub on main change
+                                    expandedMainDropdown = false
                                 }
                             )
                         }
                     }
                 }
-            }
-        }
 
-        // Captured Images section
-        item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("📷 الصور المرفقة للتوثيق (صورة بروفايل وبطاقة الهوية):", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                            Button(onClick = { cameraLauncher.launch(null) }) {
-                                Text("التقاط البروفايل")
+                // Sub Category selector (mandatory, contextual filter)
+                if (selectedMainCategory != null) {
+                    val subs = categoriesList.filter { it.parentId == selectedMainCategory!!.id }
+                    if (subs.isNotEmpty()) {
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedButton(
+                                onClick = { expandedSubDropdown = true },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(selectedSubCategory?.let { "↳ القسم الفرعي: ${it.nameAr}" } ?: "اختر القسم والتخصص الفرعي (إجباري) *")
                             }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            if (profileImage.isNotBlank()) {
-                                Box(modifier = Modifier.size(80.dp).clip(RoundedCornerShape(8.dp))) {
-                                    ProviderImage(profileImage, modifier = Modifier.fillMaxSize())
+                            DropdownMenu(
+                                expanded = expandedSubDropdown,
+                                onDismissRequest = { expandedSubDropdown = false }
+                            ) {
+                                for (sub in subs) {
+                                    DropdownMenuItem(
+                                        text = { Text("${sub.imageBase64} ${sub.nameAr}") },
+                                        onClick = {
+                                            selectedSubCategory = sub
+                                            expandedSubDropdown = false
+                                        }
+                                    )
                                 }
                             }
                         }
+                    } else {
+                        Text("💡 للتوثيق، لا توجد مهن فرعية مضافة حالياً تحت هذا التخصص. سيتم اعتماد القسم الرئيسي مباشرة تلقائياً.", fontSize = 10.sp, color = Color.Gray)
+                    }
+                }
 
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                            Button(onClick = { idLauncher.launch(null) }) {
-                                Text("التقاط الهوية")
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            if (idCardImage.isNotBlank()) {
-                                Box(modifier = Modifier.size(80.dp).clip(RoundedCornerShape(8.dp))) {
-                                    ProviderImage(idCardImage, modifier = Modifier.fillMaxSize())
-                                }
-                            }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("📍 خريطة الموقع الجغرافي للعمل باليمن (اختياري):", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = CharcoalGoldPrimary)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = customLat,
+                        onValueChange = { customLat = it },
+                        label = { Text("خط العرض Latitude") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = customLng,
+                        onValueChange = { customLng = it },
+                        label = { Text("خط الطول Longitude") },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+
+        // Mandatory Profile Picture Upload section
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("🧑‍💼 الصورة الشخصية للمستفيد (إجباري) *", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.White)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(onClick = { cameraProfileLauncher.launch(null) }, modifier = Modifier.weight(1f)) {
+                            Text("التقاط سيلفي 📸", fontSize = 11.sp)
+                        }
+                        Button(onClick = { galleryProfileLauncher.launch("image/*") }, modifier = Modifier.weight(1f)) {
+                            Text("من الاستوديو 🖼️", fontSize = 11.sp)
+                        }
+                    }
+                    if (profileImage.isNotBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .size(90.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .align(Alignment.CenterHorizontally)
+                        ) {
+                            ProviderImage(profileImage, modifier = Modifier.fillMaxSize())
+                        }
+                    } else {
+                        Text("يجب التقاط أو اختيار صورتك الشخصية السيلفي لتثبيتها بملفك.", color = MaterialTheme.colorScheme.error, fontSize = 10.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            }
+        }
+
+        // Optional National ID Card photo
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("💳 تحميل صورة بطاقة الهوية الوطنية أو جواز السفر (اختياري):", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(onClick = { cameraIdLauncher.launch(null) }, modifier = Modifier.weight(1f)) {
+                            Text("تصوير الكاميرا 📸", fontSize = 11.sp)
+                        }
+                        Button(onClick = { galleryIdLauncher.launch("image/*") }, modifier = Modifier.weight(1f)) {
+                            Text("البوم الهاتف 🖼️", fontSize = 11.sp)
+                        }
+                    }
+                    if (idCardImage.isNotBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(120.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                        ) {
+                            ProviderImage(idCardImage, modifier = Modifier.fillMaxSize())
                         }
                     }
                 }
             }
         }
 
-        // Submission controller
+        // Form submit integration with validations
         item {
             Button(
                 onClick = {
-                    if (name.isBlank() || phone.isBlank() || selectedMainCategory == null) {
-                        Toast.makeText(context, "الرجاء كتابة الاسم، الهاتف والتخصص أولاً!", Toast.LENGTH_SHORT).show()
+                    val wordCount = name.trim().split("\\s+".toRegex()).size
+                    val hasSub = (selectedMainCategory != null && categoriesList.any { it.parentId == selectedMainCategory!!.id })
+
+                    if (name.isBlank() || phone.isBlank() || neighborhood.isBlank() || address.isBlank() || selectedMainCategory == null) {
+                        Toast.makeText(context, "الرجاء إملاء كافة الحانات الإجبارية المؤشر عليها بنجمة (*)!", Toast.LENGTH_LONG).show()
+                    } else if (wordCount < 3) {
+                        Toast.makeText(context, "❌ يرجى كتابة اسمك الثلاثي بالكامل للتسجيل لضمان دقة الدليل!", Toast.LENGTH_LONG).show()
+                    } else if (hasSub && selectedSubCategory == null) {
+                        Toast.makeText(context, "❌ يرجى اختيار التخصص المهني الفرعي التابع للقسم الأساسي المختار!", Toast.LENGTH_LONG).show()
+                    } else if (profileImage.isBlank()) {
+                        Toast.makeText(context, "❌ الصورة الشخصية إجبارية! يرجى التقاط سيلفي أو تحميل صورة من المعرض.", Toast.LENGTH_LONG).show()
                     } else {
+                        val parsedLat = customLat.toDoubleOrNull() ?: 15.35
+                        val parsedLng = customLng.toDoubleOrNull() ?: 44.20
+
                         val p = ServiceProvider(
                             name = name,
                             phoneNumber = phone,
                             neighborhood = neighborhood,
                             workAddress = address,
                             mainCategoryId = selectedMainCategory!!.id,
+                            subCategoryId = selectedSubCategory?.id,
                             isPending = true,
-                            profileImageBase64 = profileImage.ifBlank { "👨‍🔧" },
-                            idCardImageBase64 = idCardImage
+                            profileImageBase64 = profileImage,
+                            idCardImageBase64 = idCardImage,
+                            latitude = parsedLat,
+                            longitudeVal = parsedLng
                         )
                         viewModel.registerProvider(p)
-                        Toast.makeText(context, "✅ تم إرسال طلبك بنجاح! سينظر فيه المشرفون فوراً.", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "✅ تم رفع طلب التقدم بنجاح! سيتم مراجعته واعتماده سريعاً من الإدارة.", Toast.LENGTH_LONG).show()
                         name = ""
                         phone = ""
                         neighborhood = ""
                         address = ""
                         selectedMainCategory = null
+                        selectedSubCategory = null
                         profileImage = ""
                         idCardImage = ""
                     }
@@ -673,7 +838,7 @@ fun RegisterScreen(viewModel: AppViewModel, settings: AppSettings, categoriesLis
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
-                Text("إرسال طلب الانضمام للدليل المستمر 🚀", color = Color.Black, fontWeight = FontWeight.Bold)
+                Text("تقديم طلب الانضمام للدليل المهني اليمني 🇾🇪🚀", color = Color.Black, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -970,6 +1135,7 @@ fun ProviderDetailScreen(
 @Composable
 fun LiveChatScreen(viewModel: AppViewModel, receiver: ServiceProvider, onBack: () -> Unit) {
     val messages by viewModel.chatMessages.collectAsState()
+    val settings by viewModel.settingsState.collectAsState()
     var inputMsg by remember { mutableStateOf("") }
     val listState = rememberScrollState()
 
@@ -1058,44 +1224,152 @@ fun LiveChatScreen(viewModel: AppViewModel, receiver: ServiceProvider, onBack: (
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Input keyboard bar
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedTextField(
-                value = inputMsg,
-                onValueChange = { inputMsg = it },
-                placeholder = { Text("اكتب رسالتك لـ ${receiver.name}...") },
-                modifier = Modifier.weight(1f),
-                singleLine = true
-            )
-            Button(
-                onClick = {
-                    if (inputMsg.isNotBlank()) {
-                        viewModel.sendChatMessage("USER", "PROVIDER_${receiver.id}", inputMsg.trim())
-                        inputMsg = ""
-                        // Trigger simulated fast provider answers
-                        val triggerText = when (activeChatList.size) {
-                            0 -> "أهلاً بك يا غالي! تفضل، كيف يمكنني خدمتك في تخصصي اليوم؟"
-                            1 -> "سأتواصل معك فوراً، يمكنك أيضاً الاتصال بي على رقمي للتفاهم السريع."
-                            else -> "تمام جداً يسعدني ويشرفني خدمتك!"
-                        }
-                        // Delayed response simulation
-                        try {
-                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                                viewModel.sendChatMessage("PROVIDER_${receiver.id}", "USER", triggerText)
-                            }, 1200)
-                        } catch (e: Exception) {
-                            // Handler backup
-                        }
-                    }
-                },
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+        // Input keyboard bar with dynamic restriction policies
+        val isGlobalEnabled = settings.isChatEnabledGlobal
+        val isBlocked = settings.blockedChatUserPhones.split(",")
+            .map { phoneStr -> phoneStr.trim() }
+            .any { phoneStr -> phoneStr.isNotBlank() && (phoneStr == receiver.phoneNumber) }
+
+        if (!isGlobalEnabled) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text("إرسال")
+                Text(
+                    text = settings.chatDisabledMessage.ifBlank { "⚠️ ميزة الدردشة الفورية مغلقة حالياً بقرار من الإدارة." },
+                    modifier = Modifier.padding(16.dp),
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    color = Color.White
+                )
             }
+        } else if (settings.preventVisitorsChat) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "⚠️ تواصل المشرفين مغلق حالياً للزوار بقرار من إدارة التطبيق.",
+                    modifier = Modifier.padding(16.dp),
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    color = Color.White
+                )
+            }
+        } else if (settings.preventProvidersChat) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "⚠️ تواصل المحادثات معلق لمقدمي الخدمات والردود متوقفة مؤقتاً.",
+                    modifier = Modifier.padding(16.dp),
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    color = Color.White
+                )
+            }
+        } else if (isBlocked) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "🚫 عذراً، تم حظر رقم هذا المستخدم من الدردشة لمخالفة تعليمات الإستخدام العامة.",
+                    modifier = Modifier.padding(16.dp),
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    color = Color.White
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = inputMsg,
+                    onValueChange = { inputMsg = it },
+                    placeholder = { Text("اكتب رسالتك لـ ${receiver.name}...") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true
+                )
+                Button(
+                    onClick = {
+                        if (inputMsg.isNotBlank()) {
+                            viewModel.sendChatMessage("USER", "PROVIDER_${receiver.id}", inputMsg.trim())
+                            inputMsg = ""
+                            // Trigger simulated fast provider answers
+                            val triggerText = when (activeChatList.size) {
+                                0 -> "أهلاً بك يا غالي! تفضل، كيف يمكنني خدمتك في تخصصي اليوم؟"
+                                1 -> "سأتواصل معك فوراً، يمكنك أيضاً الاتصال بي على رقمي للتفاهم السريع."
+                                else -> "تمام جداً يسعدني ويشرفني خدمتك!"
+                            }
+                            // Delayed response simulation
+                            try {
+                                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                    viewModel.sendChatMessage("PROVIDER_${receiver.id}", "USER", triggerText)
+                                }, 1200)
+                            } catch (e: Exception) {
+                                // Handler backup
+                            }
+                        }
+                    },
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    Text("إرسال")
+                }
+            }
+        }
+    }
+}
+
+// --- 5. FLEXIBLE WELCOME HEADER COMPOSABLE ---
+@Composable
+fun WelcomeHeader(settings: AppSettings, modifier: Modifier = Modifier) {
+    if (settings.isWelcomeImageActive && settings.welcomeImageBase64.isNotBlank()) {
+        Card(
+            modifier = modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            elevation = CardDefaults.cardElevation(2.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(130.dp)
+            ) {
+                ProviderImage(
+                    imgStr = settings.welcomeImageBase64,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+    } else if (settings.welcomeText.isNotBlank()) {
+        Card(
+            modifier = modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+        ) {
+            Text(
+                text = settings.welcomeText,
+                fontSize = settings.welcomeTextSize.sp,
+                color = when (settings.fontColor) {
+                    "LIGHT_GOLD" -> LightGoldColor
+                    "VIBRANT_SILVER" -> VibrantSilverColor
+                    else -> BrightWhiteColor
+                },
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            )
         }
     }
 }
