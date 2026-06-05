@@ -41,6 +41,15 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.activity.compose.rememberLauncherForActivityResult
 
+data class SearchSuggestion(
+    val text: String,
+    val subtext: String,
+    val icon: String,
+    val type: String, // "NAME", "CATEGORY", "LOCATION"
+    val value: String = "",
+    val id: Int? = null
+)
+
 // --- 1. HOME SCREEN ---
 @Composable
 fun HomeScreen(
@@ -133,26 +142,53 @@ fun HomeScreen(
                         }
                 ) {
                     Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp),
+                        modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = if (banner.type == "IMAGE") "🖼️ إعلان مصور" else "📢 إعلان ممول",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.primary
+                        if (banner.type == "IMAGE" && banner.content.length > 50) {
+                            // Render Base64 image
+                            ProviderImage(banner.content, modifier = Modifier.fillMaxSize())
+                            // Tint/overlay layer
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.4f))
                             )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = banner.content,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                                textAlign = TextAlign.Center,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                        } else if (banner.type == "VIDEO") {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.DarkGray)
                             )
+                            Column(
+                                modifier = Modifier.align(Alignment.Center),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text("▶️", fontSize = 28.sp)
+                                Text("مقطع فيديو ترويجي نشط 🎬", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        if (banner.type != "VIDEO") {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.padding(12.dp)
+                            ) {
+                                Text(
+                                    text = if (banner.type == "IMAGE") "🖼️ إعلان مصور" else "📢 إعلان ممول",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (banner.type == "IMAGE") Color.White else MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = if (banner.type == "IMAGE" && banner.content.length > 50) "اضغط للتوجيه والاطلاع بخصومات حصرية" else banner.content,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center,
+                                    color = Color.White
+                                )
+                            }
                         }
                     }
                 }
@@ -161,6 +197,35 @@ fun HomeScreen(
 
         // --- 2. SEARCH BAR & QUICK FILTERS ACCORDION ---
         item {
+            val suggestions = remember(viewModel.searchQuery, providersList, categoriesList) {
+                if (viewModel.searchQuery.isBlank()) emptyList<SearchSuggestion>()
+                else {
+                    val query = viewModel.searchQuery.trim().lowercase()
+                    val list = mutableListOf<SearchSuggestion>()
+                    
+                    // 1. Matches by Provider Name (limit to 3)
+                    val nameMatches = providersList.filter { it.name.lowercase().contains(query) }.take(3)
+                    for (m in nameMatches) {
+                        list.add(SearchSuggestion(text = m.name, subtext = "اسم مهني", icon = "👤", type = "NAME", value = m.name))
+                    }
+                    
+                    // 2. Matches by Category / Specialization (limit to 3)
+                    val catMatches = categoriesList.filter { it.nameAr.lowercase().contains(query) || it.nameEn.lowercase().contains(query) }.take(3)
+                    for (c in catMatches) {
+                        list.add(SearchSuggestion(text = c.nameAr, subtext = "تخصص / قسم", icon = "📂", type = "CATEGORY", id = c.id))
+                    }
+                    
+                    // 3. Matches by Location / Geographic (limit to 3)
+                    val allNeighborhoods = providersList.map { it.neighborhood.trim() }.filter { it.isNotBlank() }.distinct()
+                    val locMatches = allNeighborhoods.filter { it.lowercase().contains(query) }.take(3)
+                    for (l in locMatches) {
+                        list.add(SearchSuggestion(text = l, subtext = "موقع جغرافي / منطقة", icon = "📍", type = "LOCATION", value = l))
+                    }
+                    
+                    list
+                }
+            }
+
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(16.dp),
@@ -208,6 +273,61 @@ fun HomeScreen(
                             onClick = { showAdvancedFilters = !showAdvancedFilters }
                         ) {
                             Text(text = if (showAdvancedFilters) "🔼" else "🔽", fontSize = 20.sp)
+                        }
+                    }
+
+                    // Interactive search suggestions dropdown box
+                    if (suggestions.isNotEmpty()) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
+                        ) {
+                            Column(modifier = Modifier.padding(4.dp)) {
+                                Text(
+                                    text = "💡 نتائج مقترحة متطابقة فورياً:",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                    fontWeight = FontWeight.Bold
+                                )
+                                for (sug in suggestions) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                when (sug.type) {
+                                                    "NAME" -> {
+                                                        viewModel.searchQuery = sug.value
+                                                    }
+                                                    "CATEGORY" -> {
+                                                        viewModel.filterCategoryId = sug.id
+                                                        viewModel.searchQuery = "" // clear to open category list
+                                                        Toast.makeText(context, "📂 تصفية حسب تخصص: ${sug.text}", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                    "LOCATION" -> {
+                                                        viewModel.filterRegion = sug.value
+                                                        viewModel.searchQuery = "" // clear to view active region
+                                                        Toast.makeText(context, "📍 تصفية حسب موقع: ${sug.text}", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            }
+                                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Text(sug.icon, fontSize = 16.sp)
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(sug.text, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                            Text(sug.subtext, fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+                                        }
+                                        Text("⏎ تطبيق", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Light)
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -352,7 +472,13 @@ fun HomeScreen(
                                     .fillMaxSize()
                                     .padding(4.dp)
                             ) {
-                                Text(cat.imageBase64, fontSize = 22.sp)
+                                Box(modifier = Modifier.size(26.dp), contentAlignment = Alignment.Center) {
+                                    ProviderImage(
+                                        imgStr = cat.imageBase64,
+                                        modifier = Modifier.fillMaxSize(),
+                                        textStyle = LocalTextStyle.current.copy(fontSize = 22.sp)
+                                    )
+                                }
                                 Text(
                                     text = if (settings.activeLanguage == "AR") cat.nameAr else cat.nameEn,
                                     fontSize = 11.sp,
@@ -571,6 +697,32 @@ fun ProviderImage(imgStr: String, modifier: Modifier = Modifier, textStyle: andr
     }
 }
 
+// --- Helper for automatic image compression and resizing ---
+fun compressAndResizeImage(bitmap: android.graphics.Bitmap): String {
+    val maxDimension = 600
+    val originalWidth = bitmap.width
+    val originalHeight = bitmap.height
+    var newWidth = originalWidth
+    var newHeight = originalHeight
+
+    if (originalWidth > maxDimension || originalHeight > maxDimension) {
+        if (originalWidth > originalHeight) {
+            newWidth = maxDimension
+            newHeight = (originalHeight * (maxDimension.toFloat() / originalWidth.toFloat())).toInt()
+        } else {
+            newHeight = maxDimension
+            newWidth = (originalWidth * (maxDimension.toFloat() / originalHeight.toFloat())).toInt()
+        }
+    }
+
+    val resizedBitmap = android.graphics.Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+    val outputStream = java.io.ByteArrayOutputStream()
+    // Compress with high quality but low size (65-75% is optimal)
+    resizedBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, outputStream)
+    val byteArray = outputStream.toByteArray()
+    return android.util.Base64.encodeToString(byteArray, android.util.Base64.NO_WRAP)
+}
+
 // --- 2. REGISTRATION FORM (👤) ---
 @Composable
 fun RegisterScreen(viewModel: AppViewModel, settings: AppSettings, categoriesList: List<Category>) {
@@ -595,10 +747,7 @@ fun RegisterScreen(viewModel: AppViewModel, settings: AppSettings, categoriesLis
         contract = androidx.activity.result.contract.ActivityResultContracts.TakePicturePreview()
     ) { bitmap ->
         if (bitmap != null) {
-            val outputStream = java.io.ByteArrayOutputStream()
-            bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, outputStream)
-            val byteArray = outputStream.toByteArray()
-            val base64 = android.util.Base64.encodeToString(byteArray, android.util.Base64.NO_WRAP)
+            val base64 = compressAndResizeImage(bitmap)
             if (activeImageField == "PROFILE") {
                 profileImage = base64
             } else {
@@ -616,10 +765,7 @@ fun RegisterScreen(viewModel: AppViewModel, settings: AppSettings, categoriesLis
                 val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
                 inputStream?.close()
                 if (bitmap != null) {
-                    val outputStream = java.io.ByteArrayOutputStream()
-                    bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, outputStream)
-                    val byteArray = outputStream.toByteArray()
-                    val base64 = android.util.Base64.encodeToString(byteArray, android.util.Base64.NO_WRAP)
+                    val base64 = compressAndResizeImage(bitmap)
                     if (activeImageField == "PROFILE") {
                         profileImage = base64
                     } else {

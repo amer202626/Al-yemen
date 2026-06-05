@@ -190,9 +190,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         return false
     }
 
-    fun addModerator(username: String, passwordHex: String, permissions: String = "ALL") {
+    fun canCurrentAdminEditCategories(): Boolean {
+        if (loggedInUser.equals("OWNER", ignoreCase = true) || loggedInUser.equals("WAM2026", ignoreCase = true)) return true
+        val currentMod = moderators.value.find { it.username.equals(loggedInUser, ignoreCase = true) }
+        return currentMod?.canEditCategories ?: false
+    }
+
+    fun canCurrentAdminDeleteProviders(): Boolean {
+        if (loggedInUser.equals("OWNER", ignoreCase = true) || loggedInUser.equals("WAM2026", ignoreCase = true)) return true
+        val currentMod = moderators.value.find { it.username.equals(loggedInUser, ignoreCase = true) }
+        return currentMod?.canDeleteProviders ?: false
+    }
+
+    fun addModerator(username: String, passwordHex: String, permissions: String = "ALL", canEditCategories: Boolean = true, canDeleteProviders: Boolean = true) {
         viewModelScope.launch {
-            repository.addModerator(Moderator(username = username, passwordHex = passwordHex, permissions = permissions))
+            repository.addModerator(Moderator(username = username, passwordHex = passwordHex, permissions = permissions, canEditCategories = canEditCategories, canDeleteProviders = canDeleteProviders))
             triggerAdminNotification("🛡️ تم إضافة المشرف الجديد: $username")
         }
     }
@@ -327,10 +339,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun addCategoryDirectFlow(cat: Category) {
+        viewModelScope.launch {
+            repository.addCategory(cat)
+            triggerAdminNotification("📂 تم إضافة قسم جديد: ${cat.nameAr} بكفاءة عالية!")
+        }
+    }
+
     fun updateCategory(id: Int, nameAr: String, nameEn: String, icon: String = "📁", parentId: Int? = null) {
         viewModelScope.launch {
             repository.updateCategory(Category(id = id, nameAr = nameAr, nameEn = nameEn, imageBase64 = icon, parentId = parentId))
             triggerAdminNotification("✏️ تم تعديل القسم: $nameAr")
+        }
+    }
+
+    fun updateCategoryDirectFlow(cat: Category) {
+        viewModelScope.launch {
+            repository.updateCategory(cat)
+            triggerAdminNotification("✏️ تم تعديل وتحديث القسم: ${cat.nameAr} بنجاح!")
         }
     }
 
@@ -401,6 +427,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 repository.updateProvider(p.copy(hasMonthlySubscription = !p.hasMonthlySubscription))
                 triggerAdminNotification("⭐ اشتراك شهري لمقدم الخدمة: ${p.name}")
             }
+        }
+    }
+
+    fun updateProviderDirect(provider: ServiceProvider) {
+        viewModelScope.launch {
+            repository.updateProvider(provider)
+            triggerAdminNotification("👤 تم تحديث بيانات مقدم الخدمة: ${provider.name}")
         }
     }
 
@@ -509,6 +542,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateSettingsDirect(settings: AppSettings) {
+        viewModelScope.launch {
+            repository.updateSettings(settings)
+            triggerAdminNotification("⚙️ تم تحديث إعدادات التطبيق العامة بالنجاح!")
+        }
+    }
+
     // User previous request interaction log function
     fun logInteraction(id: Int, name: String) {
         val list = previousInteractions.value.toMutableList()
@@ -531,7 +571,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Helper to log admin instant alerts
-    private fun triggerAdminNotification(msg: String) {
+    fun triggerAdminNotification(msg: String) {
         adminInstantNotification = msg
     }
 

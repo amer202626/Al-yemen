@@ -20,8 +20,41 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import com.example.data.*
 import com.example.ui.theme.*
+
+fun compressAndResizeImageAdmin(bytes: ByteArray): String {
+    return try {
+        val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return android.util.Base64.encodeToString(bytes, android.util.Base64.DEFAULT)
+        val maxDimension = 600
+        val originalWidth = bitmap.width
+        val originalHeight = bitmap.height
+        var newWidth = originalWidth
+        var newHeight = originalHeight
+
+        if (originalWidth > maxDimension || originalHeight > maxDimension) {
+            if (originalWidth > originalHeight) {
+                newWidth = maxDimension
+                newHeight = (originalHeight * (maxDimension.toFloat() / originalWidth.toFloat())).toInt()
+            } else {
+                newHeight = maxDimension
+                newWidth = (originalWidth * (maxDimension.toFloat() / originalHeight.toFloat())).toInt()
+            }
+        }
+
+        val resizedBitmap = android.graphics.Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+        val outputStream = java.io.ByteArrayOutputStream()
+        resizedBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, outputStream)
+        val byteArray = outputStream.toByteArray()
+        android.util.Base64.encodeToString(byteArray, android.util.Base64.NO_WRAP)
+    } catch (e: Exception) {
+        android.util.Base64.encodeToString(bytes, android.util.Base64.DEFAULT)
+    }
+}
 
 @Composable
 fun AdminDashboardScreen(viewModel: AppViewModel, settings: AppSettings) {
@@ -35,7 +68,8 @@ fun AdminDashboardScreen(viewModel: AppViewModel, settings: AppSettings) {
         "⚙️ الإعدادات السرية",
         "⚠️ البلاغات",
         "📊 إحصائيات",
-        "💾 النسخ الاحتياطي"
+        "💾 النسخ الاحتياطي",
+        "🛡️ المشرفين"
     )
 
     Column(
@@ -102,6 +136,7 @@ fun AdminDashboardScreen(viewModel: AppViewModel, settings: AppSettings) {
                 4 -> TabComplaints(viewModel)
                 5 -> TabStatistics(viewModel)
                 6 -> TabBackup(viewModel)
+                7 -> TabModerators(viewModel)
             }
         }
     }
@@ -114,7 +149,58 @@ fun TabCategories(viewModel: AppViewModel) {
     var nameAr by remember { mutableStateOf("") }
     var nameEn by remember { mutableStateOf("") }
     var emojiIcon by remember { mutableStateOf("🔧") }
+    
+    // Sub-category customization fields
+    var isSubCategory by remember { mutableStateOf(false) }
+    var selectedParentId by remember { mutableStateOf<Int?>(null) }
+    var showParentDropdown by remember { mutableStateOf(false) }
+
+    // Category Editing Fields
+    var editingCategory by remember { mutableStateOf<Category?>(null) }
+    var editNameAr by remember { mutableStateOf("") }
+    var editNameEn by remember { mutableStateOf("") }
+    var editImgBase64 by remember { mutableStateOf("") }
+    var editIsSub by remember { mutableStateOf(false) }
+    var editParentId by remember { mutableStateOf<Int?>(null) }
+    var editParentDropdown by remember { mutableStateOf(false) }
+
     val context = LocalContext.current
+
+    // Launcher for Custom Gallery Image selection for Categories!
+    val categoryImageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    val bytes = stream.readBytes()
+                    val base64 = compressAndResizeImageAdmin(bytes)
+                    emojiIcon = "base64,$base64"
+                    Toast.makeText(context, "🖼️ تم تحميل واختيار صورة المعرض بنجاح بعد الضغط التلقائي!", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "❌ فشل تحميل الصورة: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    // Launcher for editing categories custom gallery image picker
+    val editCategoryImageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    val bytes = stream.readBytes()
+                    val base64 = compressAndResizeImageAdmin(bytes)
+                    editImgBase64 = "base64,$base64"
+                    Toast.makeText(context, "🖼️ تم تحميل واختيار صورة المعرض بنجاح بعد الضغط التلقائي!", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "❌ فشل قراءة الصورة: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -123,68 +209,150 @@ fun TabCategories(viewModel: AppViewModel) {
         item {
             Card {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("➕ إضافة قسم مهني جديد:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("📂 إضافة قسم مهني جديد (أساسي / فرعي):", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     
                     OutlinedTextField(
                         value = nameAr,
                         onValueChange = { nameAr = it },
-                        label = { Text("الاسم بالعربية:") },
+                        label = { Text("الاسم باللغة العربية:") },
                         modifier = Modifier.fillMaxWidth()
                     )
 
                     OutlinedTextField(
                         value = nameEn,
                         onValueChange = { nameEn = it },
-                        label = { Text("الاسم بالإنجليزية:") },
+                        label = { Text("الاسم باللغة الإنجليزية:") },
                         modifier = Modifier.fillMaxWidth()
                     )
 
+                    // Parent/Sub category toggle select
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("رمز/أيقونة القسم ($emojiIcon):")
-                        val icons = listOf("🔧", "⚡", "🍲", "🧵", "📱", "🚗", "🏠", "🌾", "💼", "🧹")
+                        Text("نوع القسم:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = !isSubCategory, onClick = { isSubCategory = false })
+                            Text("رئيسي أساسي", fontSize = 11.sp)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = isSubCategory, onClick = { isSubCategory = true })
+                            Text("فرعي تخصصي", fontSize = 11.sp)
+                        }
+                    }
+
+                    if (isSubCategory) {
+                        Box {
+                            val parentName = categoriesList.find { it.id == selectedParentId }?.nameAr ?: "اختر القسم الرئيسي الحاضن..."
+                            Button(
+                                onClick = { showParentDropdown = true },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("الرئيسي الحاضن: $parentName 🔽", fontSize = 12.sp)
+                            }
+                            DropdownMenu(
+                                expanded = showParentDropdown,
+                                onDismissRequest = { showParentDropdown = false }
+                            ) {
+                                categoriesList.filter { it.parentId == null }.forEach { pCat ->
+                                    DropdownMenuItem(
+                                        text = { Text(pCat.nameAr) },
+                                        onClick = {
+                                            selectedParentId = pCat.id
+                                            showParentDropdown = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Photo Selection Row support: Emoji or Base64 Gallery image representation
+                    Text("شعار أو صورة القسم مخصص:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(
+                            onClick = { categoryImageLauncher.launch("image/*") },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("صورة من الاستوديو 🖼️", fontSize = 11.sp)
+                        }
+
+                        // Preview Category Icon shape
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color.DarkGray),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            ProviderImage(imgStr = emojiIcon, modifier = Modifier.fillMaxSize())
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("أو اختر رمز سريع:")
+                        val emojis = listOf("🔧", "⚡", "🍲", "🧵", "📱", "🚗", "🏠", "💼", "🧹", "💅")
                         Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                            for (ic in icons) {
-                                Box(
+                            for (em in emojis) {
+                                Text(
+                                    text = em,
+                                    fontSize = 20.sp,
                                     modifier = Modifier
                                         .padding(4.dp)
-                                        .size(36.dp)
-                                        .clip(CircleShape)
-                                        .background(if (emojiIcon == ic) MaterialTheme.colorScheme.primary else Color.DarkGray)
-                                        .clickable { emojiIcon = ic },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(ic, fontSize = 18.sp)
-                                }
+                                        .clickable { emojiIcon = em }
+                                )
                             }
                         }
                     }
 
                     Button(
                         onClick = {
+                            if (!viewModel.canCurrentAdminEditCategories()) {
+                                Toast.makeText(context, "❌ عذراً! لا تملك صلاحية إضافة أو تعديل الأقسام.", Toast.LENGTH_LONG).show()
+                                return@Button
+                            }
                             if (nameAr.isNotBlank()) {
-                                viewModel.addCategory(nameAr, nameEn, emojiIcon)
+                                val finalImage = emojiIcon
+                                val parentIdToSave = if (isSubCategory) selectedParentId else null
+                                val newCat = Category(
+                                    nameAr = nameAr,
+                                    nameEn = nameEn,
+                                    imageBase64 = finalImage,
+                                    parentId = parentIdToSave
+                                )
+                                viewModel.addCategoryDirectFlow(newCat)
                                 nameAr = ""
                                 nameEn = ""
-                                Toast.makeText(context, "📂 تم إضافة القسم بنجاح!", Toast.LENGTH_SHORT).show()
+                                emojiIcon = "🔧"
+                                selectedParentId = null
+                                isSubCategory = false
+                                Toast.makeText(context, "📂 تم إضافة وتعيين حساب المجموعات بنجاح!", Toast.LENGTH_SHORT).show()
                             }
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("حفظ وإضافة قسم")
+                        Text("حفظ وإدراج القسم بالدليل 💾")
                     }
                 }
             }
         }
 
         item {
-            Text("📋 الأقسام المضافة حالياً:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text("📋 كشاف وإدارة الأقسام المضافة حالياً:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
         }
 
         items(categoriesList) { cat ->
+            val pName = cat.parentId?.let { pId -> categoriesList.find { it.id == pId }?.nameAr }
             Card(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier.padding(12.dp),
@@ -195,21 +363,135 @@ fun TabCategories(viewModel: AppViewModel) {
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(cat.imageBase64, fontSize = 24.sp)
+                        Box(modifier = Modifier.size(36.dp), contentAlignment = Alignment.Center) {
+                            ProviderImage(imgStr = cat.imageBase64, modifier = Modifier.fillMaxSize())
+                        }
                         Column {
                             Text(cat.nameAr, fontWeight = FontWeight.Bold)
                             Text(cat.nameEn, fontSize = 11.sp, color = Color.Gray)
+                            if (pName != null) {
+                                Text("قسم فرعي لـ: $pName 🌿", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                            } else {
+                                Text("رئيسي أساسي 👑", fontSize = 10.sp, color = Color.Gray)
+                            }
                         }
                     }
 
-                    IconButton(
-                        onClick = { viewModel.deleteCategory(cat) }
-                    ) {
-                        Text("🗑️", fontSize = 18.sp)
+                    Row {
+                        IconButton(
+                            onClick = {
+                                if (!viewModel.canCurrentAdminEditCategories()) {
+                                    Toast.makeText(context, "❌ عذراً! لا تملك صلاحية إضافة أو تعديل الأقسام.", Toast.LENGTH_LONG).show()
+                                } else {
+                                    editingCategory = cat
+                                    editNameAr = cat.nameAr
+                                    editNameEn = cat.nameEn
+                                    editImgBase64 = cat.imageBase64
+                                    editIsSub = cat.parentId != null
+                                    editParentId = cat.parentId
+                                }
+                            }
+                        ) {
+                            Text("✏️", fontSize = 18.sp)
+                        }
+
+                        IconButton(
+                            onClick = {
+                                if (!viewModel.canCurrentAdminEditCategories()) {
+                                    Toast.makeText(context, "❌ عذراً! لا تملك صلاحية حذف الأقسام.", Toast.LENGTH_LONG).show()
+                                } else {
+                                    viewModel.deleteCategory(cat)
+                                    Toast.makeText(context, "🗑️ تم حذف القسم بنجاح ومزامنة البيانات!", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        ) {
+                            Text("🗑️", fontSize = 18.sp)
+                        }
                     }
                 }
             }
         }
+    }
+
+    if (editingCategory != null) {
+        val originalCat = editingCategory!!
+        AlertDialog(
+            onDismissRequest = { editingCategory = null },
+            title = { Text("تعديل تفاصيل القسم 📂") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = editNameAr,
+                        onValueChange = { editNameAr = it },
+                        label = { Text("الاسم بالعربية") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = editNameEn,
+                        onValueChange = { editNameEn = it },
+                        label = { Text("الاسم بالإنجليزية") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("النوع:")
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = !editIsSub, onClick = { editIsSub = false })
+                            Text("أساسي")
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = editIsSub, onClick = { editIsSub = true })
+                            Text("فرعي")
+                        }
+                    }
+
+                    if (editIsSub) {
+                        Box {
+                            val parName = categoriesList.find { it.id == editParentId }?.nameAr ?: "اختر الحاضن..."
+                            Button(onClick = { editParentDropdown = true }, modifier = Modifier.fillMaxWidth()) {
+                                Text("الرأس: $parName 🔽")
+                            }
+                            DropdownMenu(expanded = editParentDropdown, onDismissRequest = { editParentDropdown = false }) {
+                                categoriesList.filter { it.parentId == null && it.id != originalCat.id }.forEach { pCat ->
+                                    DropdownMenuItem(text = { Text(pCat.nameAr) }, onClick = {
+                                        editParentId = pCat.id
+                                        editParentDropdown = false
+                                    })
+                                }
+                            }
+                        }
+                    }
+
+                    // Selector
+                    Button(onClick = { editCategoryImageLauncher.launch("image/*") }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)) {
+                        Text("تغيير الصورة من المعرض 🖼️")
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    if (editNameAr.isNotBlank()) {
+                        val finalParentId = if (editIsSub) editParentId else null
+                        val updated = originalCat.copy(
+                            nameAr = editNameAr,
+                            nameEn = editNameEn,
+                            imageBase64 = editImgBase64,
+                            parentId = finalParentId
+                        )
+                        viewModel.updateCategoryDirectFlow(updated)
+                        Toast.makeText(context, "✅ تم تعديل وحفظ القسم بنجاح!", Toast.LENGTH_SHORT).show()
+                        editingCategory = null
+                    }
+                }) {
+                    Text("تثبيت وحفظ")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingCategory = null }) {
+                    Text("إلغاء")
+                }
+            }
+        )
     }
 }
 
@@ -227,6 +509,31 @@ fun TabProviders(viewModel: AppViewModel, settings: AppSettings) {
     var rejectReasonField by remember { mutableStateOf("") }
 
     val context = LocalContext.current
+
+    // Edit professional states
+    var editingProvider by remember { mutableStateOf<ServiceProvider?>(null) }
+    var editProviderName by remember { mutableStateOf("") }
+    var editProviderPhone by remember { mutableStateOf("") }
+    var editProviderNeighborhood by remember { mutableStateOf("") }
+    var editProviderAddress by remember { mutableStateOf("") }
+    var editProviderImg by remember { mutableStateOf("") }
+
+    val editProviderImageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    val bytes = stream.readBytes()
+                    val base64 = compressAndResizeImageAdmin(bytes)
+                    editProviderImg = "base64,$base64"
+                    Toast.makeText(context, "📸 تم اختيار وتعيين صورة الملف الشخصي الجديدة بعد الضغط التلقائي!", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "❌ فشل قراءة الصورة: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -367,7 +674,22 @@ fun TabProviders(viewModel: AppViewModel, settings: AppSettings) {
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(p.name, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(p.name, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                IconButton(
+                                    onClick = {
+                                        editingProvider = p
+                                        editProviderName = p.name
+                                        editProviderPhone = p.phone
+                                        editProviderNeighborhood = p.neighborhood
+                                        editProviderAddress = p.address
+                                        editProviderImg = p.profileImageBase64
+                                    },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Text("✏️", fontSize = 13.sp)
+                                }
+                            }
                             
                             // Yellow Recommended, Gold Pinned and Verified Blue Badges representation
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -565,6 +887,90 @@ fun TabProviders(viewModel: AppViewModel, settings: AppSettings) {
             },
             dismissButton = {
                 TextButton(onClick = { rejectIdState = null }) { Text("إلغاء") }
+            }
+        )
+    }
+
+    if (editingProvider != null) {
+        val originalProv = editingProvider!!
+        AlertDialog(
+            onDismissRequest = { editingProvider = null },
+            title = { Text("✏️ تعديل بيانات مقدم الخدمة المعتمد") },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.verticalScroll(rememberScrollState())
+                ) {
+                    OutlinedTextField(
+                        value = editProviderName,
+                        onValueChange = { editProviderName = it },
+                        label = { Text("الاسم الكامل:") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = editProviderPhone,
+                        onValueChange = { editProviderPhone = it },
+                        label = { Text("رقم الهاتف:") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = editProviderNeighborhood,
+                        onValueChange = { editProviderNeighborhood = it },
+                        label = { Text("السكن / الحي:") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = editProviderAddress,
+                        onValueChange = { editProviderAddress = it },
+                        label = { Text("عنوان العمل / تفاصيل المحل:") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(
+                            onClick = { editProviderImageLauncher.launch("image/*") },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("تغيير الصورة 🖼️", fontSize = 11.sp)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(Color.DarkGray),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            ProviderImage(imgStr = editProviderImg, modifier = Modifier.fillMaxSize())
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    if (editProviderName.isNotBlank() && editProviderPhone.isNotBlank()) {
+                        val updated = originalProv.copy(
+                            name = editProviderName,
+                            phone = editProviderPhone,
+                            neighborhood = editProviderNeighborhood,
+                            address = editProviderAddress,
+                            profileImageBase64 = editProviderImg
+                        )
+                        viewModel.updateProviderDirect(updated)
+                        Toast.makeText(context, "✅ تم حفظ التعديلات بنجاح ومزامنتها!", Toast.LENGTH_SHORT).show()
+                        editingProvider = null
+                    }
+                }) {
+                    Text("حفظ التعديلات")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingProvider = null }) {
+                    Text("إلغاء")
+                }
             }
         )
     }
@@ -1066,6 +1472,52 @@ fun TabBackup(viewModel: AppViewModel) {
     // Auto schedule daily state
     var autoScheduleBackupEnabled by remember { mutableStateOf(false) }
 
+    // Obsolete cleanup filters
+    var autoCleanupEnabled by remember { mutableStateOf(false) }
+    var cleanupIntervalDays by remember { mutableStateOf(30) } // 7 , 30 days
+
+    // SAF File Pickers for real external SD card/Google Drive/Internal storage backups!
+    val saveBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null) {
+            try {
+                // Ensure backup text is populated
+                if (viewModel.backupStringState.isBlank()) {
+                    viewModel.backupDatabaseState()
+                }
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    out.write(viewModel.backupStringState.toByteArray(Charsets.UTF_8))
+                }
+                Toast.makeText(context, "✅ تم حفظ ملف النسخة الاحتياطية بنجاح على جهازك/درايف!", Toast.LENGTH_LONG).show()
+                viewModel.triggerAdminNotification("💾 تم تصدير ملف النسخة الاحتياطية بنجاح!")
+            } catch (e: Exception) {
+                Toast.makeText(context, "❌ فشل حفظ الملف: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val loadBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                    val content = inputStream.bufferedReader().use { it.readText() }
+                    val ok = viewModel.restoreDatabaseState(content)
+                    if (ok) {
+                        Toast.makeText(context, "✅ تم بنجاح استرداد واستعادة النسخة بنجاح!", Toast.LENGTH_LONG).show()
+                        viewModel.triggerAdminNotification("⏳ تم تطبيق واسترجاع بيانات النسخة بالكامل!")
+                    } else {
+                        Toast.makeText(context, "❌ صيغة الملف غير معتمدة أو تالفة!", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "❌ فشل قراءة الملف: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(14.dp),
         modifier = Modifier.fillMaxSize()
@@ -1073,8 +1525,8 @@ fun TabBackup(viewModel: AppViewModel) {
         item {
             Card {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("💿 إنتاج نسخة احتياطية فورية (Portable String Backup):", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Text("يقوم النظام باستخلاص كافة الإعدادات والمهنيين والمجموعات وحفظها في نص مدمج ومحكم.", fontSize = 11.sp, color = Color.Gray)
+                    Text("💿 إدارة النسخ الاحتياطي (بطاقة الذاكرة / جوجل درايف):", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("يمكنك تصدير كود النسخ الاحتياطي وحفظه كملف نصي آمن مباشرة في ذاكرة الهاتف، بطاقة الذاكرة الخارجية SD، أو جوجل درايف السحابي.", fontSize = 11.sp, color = Color.Gray)
 
                     Button(
                         onClick = {
@@ -1083,58 +1535,86 @@ fun TabBackup(viewModel: AppViewModel) {
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("إنتاج نسخة احتياطية 💾")
+                        Text("إنتاج نسخة احتياطية جديدة 💾")
                     }
 
-                    // Display exported string code
                     if (viewModel.backupStringState.isNotBlank()) {
-                        OutlinedTextField(
-                            value = viewModel.backupStringState,
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("رمز كود النسخة الموجهة:") },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(120.dp)
-                        )
-
-                        Button(
-                            onClick = {
-                                clipboard.setText(AnnotatedString(viewModel.backupStringState))
-                                Toast.makeText(context, "📋 تم نسخ كود النسخة الحافظة إلى الذاكرة!", Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                            modifier = Modifier.fillMaxWidth()
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("نسخ كود الاستعادة للذاكرة")
+                            Button(
+                                onClick = {
+                                    saveBackupLauncher.launch("yemen_directory_backup_${System.currentTimeMillis()}.txt")
+                                },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                            ) {
+                                Text("حفظ كملف 📂", fontSize = 12.sp)
+                            }
+
+                            Button(
+                                onClick = {
+                                    clipboard.setText(AnnotatedString(viewModel.backupStringState))
+                                    Toast.makeText(context, "📋 تم اللصق في حافظتك كرمز!", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                            ) {
+                                Text("نسخ الرمز للذاكرة 📋", fontSize = 12.sp)
+                            }
                         }
                     }
                 }
             }
         }
 
-        // Automated scheduling daily
+        // Auto schedule and DB cleaning
         item {
             Card {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("⏰ جدولة تلقائية يومية للنسخ الاحتياطي (Scheduled Tasks):", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Text("يتم تفعيل هذا الخيار لجدولة حفظ نسخة دورية تلقائية على بطاقة الذاكرة أو ذاكرة الهاتف بمجرد الحصول على موافقتك وتحديد المجلد المناسب.", fontSize = 11.sp, color = Color.Gray)
+                    Text("🧹 أداة جدولة وتصفية البيانات المجدولة (DB Cleaner):", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("جدولة مسح تلقائي دوري للبيانات المؤقتة وسجلات المحادثات والدردشة القديمة جداً لتوفير مساحة التخزين وزيادة أداء التطبيق.", fontSize = 11.sp, color = Color.Gray)
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("تفعيل الجدولة الذاتية اليومية:")
+                        Text("تفعيل التنظيف التلقائي المجدول:", fontSize = 12.sp)
                         Switch(
-                            checked = autoScheduleBackupEnabled,
-                            onCheckedChange = {
-                                if (it) {
-                                    Toast.makeText(context, "✅ تم طلب الإذن والجدولة اليومية تمت بنجاح في مجلد YemenBackup!", Toast.LENGTH_LONG).show()
-                                }
-                                autoScheduleBackupEnabled = it
-                            }
+                            checked = autoCleanupEnabled,
+                            onCheckedChange = { autoCleanupEnabled = it }
                         )
+                    }
+
+                    if (autoCleanupEnabled) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("تصفية البيانات التي مر عليها أكثر من:", fontSize = 11.sp)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = cleanupIntervalDays == 7, onClick = { cleanupIntervalDays = 7 })
+                                Text("أسبوع", fontSize = 11.sp)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = cleanupIntervalDays == 30, onClick = { cleanupIntervalDays = 30 })
+                                Text("شهر", fontSize = 11.sp)
+                            }
+                        }
+                    }
+
+                    Button(
+                        onClick = {
+                            viewModel.clearChatHistory()
+                            Toast.makeText(context, "🧹 تم تنظيف سجلات المحادثات القديمة والبيانات المؤقتة بنجاح، مما وفر مساحة في قاعدة البيانات!", Toast.LENGTH_LONG).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("تنظيف فوري للسجلات والدردشات القديمة 🗑️")
                     }
                 }
             }
@@ -1144,8 +1624,21 @@ fun TabBackup(viewModel: AppViewModel) {
         item {
             Card {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("🔄 استعادة قاعدة البيانات من نص احتياطي سابق:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    
+                    Text("🔄 استرجاع البيانات واستعادة المزامنة:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("يمكنك إما تحديد ملف النسخة الاحتياطية المخزن على جهازك (SD / Google Drive) بشكل مباشر، أو لصق كود النص الرمز أدناه.", fontSize = 11.sp, color = Color.Gray)
+
+                    Button(
+                        onClick = {
+                            loadBackupLauncher.launch(arrayOf("text/plain", "application/octet-stream"))
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
+                    ) {
+                        Text("استيراد وقراءة من ملف نسخة احتياطية 📁")
+                    }
+
+                    Divider(color = GrayBorder, modifier = Modifier.padding(vertical = 4.dp))
+
                     OutlinedTextField(
                         value = inputBackupText,
                         onValueChange = { inputBackupText = it },
@@ -1170,10 +1663,281 @@ fun TabBackup(viewModel: AppViewModel) {
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
                     ) {
-                        Text("استعادة والبدء بالمزامنة الفورية")
+                        Text("استعادة والبدء بالمزامنة الفورية من الكود")
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+fun TabModerators(viewModel: AppViewModel) {
+    val context = LocalContext.current
+    val moderatorsList by viewModel.moderators.collectAsState(initial = emptyList())
+
+    var modUsername by remember { mutableStateOf("") }
+    var modPassword by remember { mutableStateOf("") }
+    var modPermissions by remember { mutableStateOf("ALL") } // ALL, READ_ONLY
+    var modCanEditCategories by remember { mutableStateOf(true) }
+    var modCanDeleteProviders by remember { mutableStateOf(true) }
+
+    var editingModerator by remember { mutableStateOf<Moderator?>(null) }
+    var editPassword by remember { mutableStateOf("") }
+    var editUsername by remember { mutableStateOf("") }
+    var editCanEditCategories by remember { mutableStateOf(true) }
+    var editCanDeleteProviders by remember { mutableStateOf(true) }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "🛡️ إضافة مشرف جديد للمنظومة",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    OutlinedTextField(
+                        value = modUsername,
+                        onValueChange = { modUsername = it },
+                        label = { Text("اسم المستخدم (Username)") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = modPassword,
+                        onValueChange = { modPassword = it },
+                        label = { Text("كلمة المرور (Password)") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("الصلاحيات الرئيسية:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = modPermissions == "ALL", onClick = { modPermissions = "ALL" })
+                            Text("كاملة (ALL)", fontSize = 11.sp)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = modPermissions == "READ_ONLY", onClick = { modPermissions = "READ_ONLY" })
+                            Text("قراءة فقط (READ)", fontSize = 11.sp)
+                        }
+                    }
+
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("صلاحية تعديل وإضافة الأقسام والخدمات:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Switch(
+                                checked = modCanEditCategories,
+                                onCheckedChange = { modCanEditCategories = it }
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("صلاحية حذف مقدمي الخدمات في الدليل:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Switch(
+                                checked = modCanDeleteProviders,
+                                onCheckedChange = { modCanDeleteProviders = it }
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = {
+                            if (modUsername.isBlank() || modPassword.isBlank()) {
+                                Toast.makeText(context, "⚠️ الرجاء ملء جميع الحقول المطلوبة!", Toast.LENGTH_SHORT).show()
+                            } else {
+                                viewModel.addModerator(
+                                    username = modUsername,
+                                    passwordHex = modPassword,
+                                    permissions = modPermissions,
+                                    canEditCategories = modCanEditCategories,
+                                    canDeleteProviders = modCanDeleteProviders
+                                )
+                                Toast.makeText(context, "✅ تم إضافة المشرف الجديد بنجاح ومزامنة الأجهزة!", Toast.LENGTH_LONG).show()
+                                modUsername = ""
+                                modPassword = ""
+                                modCanEditCategories = true
+                                modCanDeleteProviders = true
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("إنشاء حساب المشرف والبدء بالمخطط 🛡️")
+                    }
+                }
+            }
+        }
+
+        item {
+            Text("قائمة المشرفين المسجلين حالياً ومزامنتهم:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        }
+
+        if (moderatorsList.isEmpty()) {
+            item {
+                Text("لا يوجد أي مشرفين مضافين حالياً.", color = Color.Gray, fontSize = 12.sp)
+            }
+        } else {
+            items(moderatorsList) { m ->
+                Card(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(text = "👤 اسم المشرف: ${m.username}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text(text = "صلاحيات أساسية: " + if (m.permissions == "ALL") "كاملة 👑" else "قراءة فقط 👁️", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                                Text(text = "طريقة الدخول: ${m.passwordHex}", fontSize = 11.sp, color = Color.Gray)
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                IconButton(onClick = {
+                                    editingModerator = m
+                                    editUsername = m.username
+                                    editPassword = m.passwordHex
+                                    editCanEditCategories = m.canEditCategories
+                                    editCanDeleteProviders = m.canDeleteProviders
+                                }) {
+                                    Text("✏️", fontSize = 16.sp)
+                                }
+                                IconButton(onClick = {
+                                    if (m.username == "WAM2026") {
+                                        Toast.makeText(context, "❌ لا يمكن حذف الحساب الرئيسي للمدير الرئيسي!", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        viewModel.deleteModerator(m)
+                                        Toast.makeText(context, "🗑️ تم حذف حساب المشرف وتحديث قاعدة البيانات!", Toast.LENGTH_SHORT).show()
+                                    }
+                                }) {
+                                    Text("🗑️", fontSize = 16.sp)
+                                }
+                            }
+                        }
+
+                        // Real-time permission control toggles with individual switches
+                        Divider(color = Color.LightGray.copy(alpha = 0.3f), modifier = Modifier.height(1.dp).fillMaxWidth())
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable {
+                                viewModel.updateModerator(m.copy(canEditCategories = !m.canEditCategories))
+                                Toast.makeText(context, "🔄 تم مواءمة صلاحية الأقسام فورياً!", Toast.LENGTH_SHORT).show()
+                            }) {
+                                Checkbox(checked = m.canEditCategories, onCheckedChange = {
+                                    viewModel.updateModerator(m.copy(canEditCategories = it))
+                                    Toast.makeText(context, "🔄 تم مواءمة صلاحية الأقسام فورياً!", Toast.LENGTH_SHORT).show()
+                                })
+                                Text("تعديل الأقسام", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
+
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable {
+                                viewModel.updateModerator(m.copy(canDeleteProviders = !m.canDeleteProviders))
+                                Toast.makeText(context, "🔄 تم مواءمة صلاحية حذف الأعضاء فورياً!", Toast.LENGTH_SHORT).show()
+                            }) {
+                                Checkbox(checked = m.canDeleteProviders, onCheckedChange = {
+                                    viewModel.updateModerator(m.copy(canDeleteProviders = it))
+                                    Toast.makeText(context, "🔄 تم مواءمة صلاحية حذف الأعضاء فورياً!", Toast.LENGTH_SHORT).show()
+                                })
+                                Text("حذف المهنيين", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (editingModerator != null) {
+        val currentMod = editingModerator!!
+        AlertDialog(
+            onDismissRequest = { editingModerator = null },
+            title = { Text("✏️ تعديل حساب المشرف / كلمة المرور") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = editUsername,
+                        onValueChange = { editUsername = it },
+                        label = { Text("اسم المستخدم") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = editPassword,
+                        onValueChange = { editPassword = it },
+                        label = { Text("كلمة المرور") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("صلاحية تعديل الأقسام:", fontSize = 12.sp)
+                        Switch(
+                            checked = editCanEditCategories,
+                            onCheckedChange = { editCanEditCategories = it }
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("صلاحية حذف المهنيين:", fontSize = 12.sp)
+                        Switch(
+                            checked = editCanDeleteProviders,
+                            onCheckedChange = { editCanDeleteProviders = it }
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    if (editUsername.isNotBlank() && editPassword.isNotBlank()) {
+                        val updated = currentMod.copy(
+                            username = editUsername,
+                            passwordHex = editPassword,
+                            canEditCategories = editCanEditCategories,
+                            canDeleteProviders = editCanDeleteProviders
+                        )
+                        viewModel.updateModerator(updated)
+                        Toast.makeText(context, "✅ تم تحديث بيانات المشرف ومزامنتها على كل الأجهزة!", Toast.LENGTH_SHORT).show()
+                        editingModerator = null
+                    }
+                }) {
+                    Text("حفظ التعديل")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingModerator = null }) {
+                    Text("إلغاء")
+                }
+            }
+        )
     }
 }

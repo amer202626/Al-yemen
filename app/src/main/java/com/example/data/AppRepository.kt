@@ -160,6 +160,7 @@ class AppRepository(private val context: Context) {
         val provs = db.serviceProviderDao().getAllProvidersFlow().firstOrNull() ?: emptyList()
         val complaintsList = db.complaintDao().getAllComplaintsFlow().firstOrNull() ?: emptyList()
         val bannersList = db.bannerDao().getAllBannersFlow().firstOrNull() ?: emptyList()
+        val moderatorsList = db.moderatorDao().getAllModeratorsFlow().firstOrNull() ?: emptyList()
 
         // Construct a simple, clear text format to serve as a secure portable backup string
         val sb = StringBuilder()
@@ -173,6 +174,10 @@ class AppRepository(private val context: Context) {
         sb.append("=== PROVIDERS ===\n")
         for (p in provs) {
             sb.append("${p.id}|${p.name}|${p.phone}|${p.mainCategoryId}|${p.address}|${p.neighborhood}|${p.isApproved}|${p.isRejected}|${p.isPinned}|${p.isRecommended}|${p.isVerified}|${p.averageRating}|${p.hasMonthlySubscription}\n")
+        }
+        sb.append("=== MODERATORS ===\n")
+        for (m in moderatorsList) {
+            sb.append("${m.id},${m.username},${m.passwordHex},${m.permissions}\n")
         }
         sb.append("=== END ===")
         return sb.toString()
@@ -246,6 +251,23 @@ class AppRepository(private val context: Context) {
                                 hasMonthlySubscription = sub
                             )
                             db.serviceProviderDao().insertProvider(p)
+                        }
+                    }
+                    "=== MODERATORS ===" -> {
+                        val parts = line.split(",")
+                        if (parts.size >= 4) {
+                            val id = parts[0].toIntOrNull() ?: 0
+                            val user = parts[1]
+                            val pass = parts[2]
+                            val perm = parts[3]
+
+                            val m = Moderator(
+                                id = id,
+                                username = user,
+                                passwordHex = pass,
+                                permissions = perm
+                            )
+                            db.moderatorDao().insertModerator(m)
                         }
                     }
                 }

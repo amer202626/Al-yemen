@@ -17,6 +17,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -68,6 +70,13 @@ fun MainAppContent(viewModel: AppViewModel) {
     var showAssistantOverlayDialog by remember { mutableStateOf(false) }
     var assistantOffsetStateX by remember { mutableStateOf(0f) }
     var assistantOffsetStateY by remember { mutableStateOf(0f) }
+
+    LaunchedEffect(settings.assistantPositionX, settings.assistantPositionY) {
+        if (assistantOffsetStateX == 0f && assistantOffsetStateY == 0f) {
+            assistantOffsetStateX = settings.assistantPositionX
+            assistantOffsetStateY = settings.assistantPositionY
+        }
+    }
 
     YemenTheme(
         themeChoice = settings.themeChoice,
@@ -242,51 +251,85 @@ fun MainAppContent(viewModel: AppViewModel) {
                         .fillMaxWidth()
                         .navigationBarsPadding()
                 ) {
-                    Column(
-                        modifier = Modifier.padding(vertical = padV, horizontal = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Left Side: About App link Icon (ℹ️ / custom aboutIcon)
-                            IconButton(
-                                onClick = { viewModel.currentScreen = "ABOUT" },
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Text(settings.aboutIcon, fontSize = 20.sp)
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        // Footer background image if loaded from Gallery
+                        if (settings.footerBackgroundImageBase64.isNotBlank()) {
+                            val bitmap = remember(settings.footerBackgroundImageBase64) {
+                                try {
+                                    val cleanStr = if (settings.footerBackgroundImageBase64.contains("base64,")) settings.footerBackgroundImageBase64.substringAfter("base64,") else settings.footerBackgroundImageBase64
+                                    val decodedBytes = android.util.Base64.decode(cleanStr, android.util.Base64.DEFAULT)
+                                    android.graphics.BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.size)
+                                } catch (e: Exception) {
+                                    null
+                                }
                             }
-
-                            // Center Side: Advertising FooterText (Customizable, reduced size by 50%!)
-                            if (!settings.isFooterHidden) {
-                                Text(
-                                    text = settings.adFooterText,
-                                    fontSize = fontS,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Bold,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.weight(1f)
+                            if (bitmap != null) {
+                                Image(
+                                    bitmap = bitmap.asImageBitmap(),
+                                    contentDescription = "Footer Background",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.matchParentSize(),
+                                    alpha = 0.35f
+                                )
+                                // Dark scrim for readability
+                                Box(
+                                    modifier = Modifier
+                                        .matchParentSize()
+                                        .background(Color.Black.copy(alpha = 0.6f))
                                 )
                             }
-
-                            // Right Side: Previous user booking/service interactions icon
-                            IconButton(
-                                onClick = { viewModel.currentScreen = "PREVIOUS_REQUESTS" },
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Text("📋", fontSize = 20.sp)
-                            }
                         }
-                        
-                        Text(
-                            text = "صنع بكل فخر يمني 🇾🇪 - WAM 2026",
-                            fontSize = (0.7f * settings.footerFontSize).sp,
-                            color = Color.Gray,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+
+                        Column(
+                            modifier = Modifier.padding(vertical = padV, horizontal = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Left Side: About App link Icon (ℹ️ / custom aboutIcon)
+                                if (!settings.isAboutIconHidden) {
+                                    IconButton(
+                                        onClick = { viewModel.currentScreen = "ABOUT" },
+                                        modifier = Modifier.size(settings.aboutIconSize.dp)
+                                    ) {
+                                        Text(settings.aboutIcon, fontSize = (settings.aboutIconSize * 0.6f).sp)
+                                    }
+                                } else {
+                                    Spacer(modifier = Modifier.size(settings.aboutIconSize.dp))
+                                }
+
+                                // Center Side: Advertising FooterText (Customizable, reduced size by 50%!)
+                                if (!settings.isFooterHidden) {
+                                    Text(
+                                        text = settings.adFooterText,
+                                        fontSize = fontS,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+
+                                // Right Side: Previous user booking/service interactions icon
+                                IconButton(
+                                    onClick = { viewModel.currentScreen = "PREVIOUS_REQUESTS" },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Text("📋", fontSize = 20.sp)
+                                }
+                            }
+                            
+                            Text(
+                                text = "صنع بكل فخر يمني 🇾🇪 - WAM 2026",
+                                fontSize = (0.7f * settings.footerFontSize).sp,
+                                color = Color.Gray,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                     }
                 }
             },
@@ -301,12 +344,20 @@ fun MainAppContent(viewModel: AppViewModel) {
                                     assistantOffsetStateY.roundToInt()
                                 )
                             }
-                            .pointerInput(Unit) {
-                                detectDragGestures { change, dragAmount ->
-                                    change.consume()
-                                    assistantOffsetStateX += dragAmount.x
-                                    assistantOffsetStateY += dragAmount.y
-                                }
+                            .pointerInput(settings) {
+                                detectDragGestures(
+                                    onDragEnd = {
+                                        viewModel.updateSettingsDirect(settings.copy(
+                                            assistantPositionX = assistantOffsetStateX,
+                                            assistantPositionY = assistantOffsetStateY
+                                        ))
+                                    },
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        assistantOffsetStateX += dragAmount.x
+                                        assistantOffsetStateY += dragAmount.y
+                                    }
+                                )
                             }
                             .size(settings.assistantSize.dp)
                             .clip(CircleShape)

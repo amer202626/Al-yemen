@@ -76,7 +76,9 @@ data class Moderator(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val username: String,
     val passwordHex: String,
-    val permissions: String = "ALL" // "ALL", "READ_ONLY"
+    val permissions: String = "ALL", // "ALL", "READ_ONLY"
+    val canEditCategories: Boolean = true,
+    val canDeleteProviders: Boolean = true
 )
 
 @Entity(tableName = "app_settings")
@@ -103,6 +105,8 @@ data class AppSettings(
     val assistantPositionY: Float = 0.82f, // Fractional top/bottom position
     val assistantIcon: String = "🤖", // Custom assistant symbol
     val aboutIcon: String = "ℹ️", // Custom icon
+    val aboutIconSize: Float = 24f,
+    val isAboutIconHidden: Boolean = false,
     val enableFCMNotifications: Boolean = true,
     val isMaintenanceMode: Boolean = false,
     val is2faEnabled: Boolean = false,
@@ -126,6 +130,7 @@ data class AppSettings(
     val footerTransparency: Float = 1.0f,
     val footerFontSize: Float = 11f,
     val footerHeightScale: Float = 1.0f,
+    val footerBackgroundImageBase64: String = "", // Background image for footer from Gallery
 
     // Blocklist, welcome screen controls, suspension & subscriptions
     val blockedProviderIds: String = "",
